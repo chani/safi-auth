@@ -11,29 +11,8 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Models;
 
-use Safi\Core\Contracts\ModelInterface;
-
-/**
- * @psalm-suppress UndefinedPropertyAssignment
- * @psalm-suppress UndefinedPropertyFetch
- */
-final class LockedIp implements ModelInterface
+final class LockedIp extends AbstractModel
 {
-    public function __construct(private readonly mixed $entity = null) {}
-
-    #[\Override]
-    public function unwrap(): mixed
-    {
-        return $this->entity;
-    }
-
-    #[\Override]
-    public function getId(): int
-    {
-        $id = $this->getProperty('id', 0);
-        return is_numeric($id) ? (int) $id : 0;
-    }
-
     public function getIp(): string
     {
         $ip = $this->getProperty('ip', '');
@@ -54,23 +33,5 @@ final class LockedIp implements ModelInterface
     public function setLockedUntil(string $dateTime): void
     {
         $this->setProperty('locked_until', $dateTime);
-    }
-
-    private function getProperty(string $property, mixed $default = null): mixed
-    {
-        if (is_object($this->entity)) {
-            /** @phpstan-ignore property.notFound */
-            return $this->entity->{$property} ?? $default;
-        }
-
-        return $default;
-    }
-
-    private function setProperty(string $property, mixed $value): void
-    {
-        if (is_object($this->entity)) {
-            /** @phpstan-ignore property.notFound */
-            $this->entity->{$property} = $value;
-        }
     }
 }

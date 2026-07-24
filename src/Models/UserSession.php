@@ -11,29 +11,8 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Models;
 
-use Safi\Core\Contracts\ModelInterface;
-
-/**
- * @psalm-suppress UndefinedPropertyAssignment
- * @psalm-suppress UndefinedPropertyFetch
- */
-final class UserSession implements ModelInterface
+final class UserSession extends AbstractModel
 {
-    public function __construct(private readonly mixed $entity = null) {}
-
-    #[\Override]
-    public function unwrap(): mixed
-    {
-        return $this->entity;
-    }
-
-    #[\Override]
-    public function getId(): int
-    {
-        $id = $this->getProperty('id', 0);
-        return is_numeric($id) ? (int) $id : 0;
-    }
-
     public function getSessionId(): string
     {
         $val = $this->getProperty('session_id', '');
@@ -87,22 +66,5 @@ final class UserSession implements ModelInterface
     public function setLastActive(string $dateTime): void
     {
         $this->setProperty('last_active', $dateTime);
-    }
-
-    private function getProperty(string $property, mixed $default = null): mixed
-    {
-        if (is_object($this->entity)) {
-            return $this->entity->{$property} ?? $default;
-        }
-
-        return $default;
-    }
-
-    private function setProperty(string $property, mixed $value): void
-    {
-        if (is_object($this->entity)) {
-            /** @phpstan-ignore property.notFound */
-            $this->entity->{$property} = $value;
-        }
     }
 }
