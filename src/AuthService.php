@@ -24,7 +24,7 @@ final class AuthService
         private readonly BruteForceShield $shield,
         private readonly ?DatabaseDriverInterface $db = null,
     ) {
-	    // DB side effects removed from constructor to prevent instantiation crashes
+        // DB side effects removed from constructor to prevent instantiation crashes
     }
 
     public function hashPassword(string $password): string
@@ -59,7 +59,7 @@ final class AuthService
         return false;
     }
 
-    public function login(int $userId, string $username = 'admin'): void
+public function login(int $userId, string $username = 'admin'): void
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {
             session_start();
@@ -67,17 +67,43 @@ final class AuthService
 
         session_regenerate_id(true);
 
+        $sessId = session_id() ?: '';
         $_SESSION[self::SESSION_USER_KEY] = $userId;
         $_SESSION[self::SESSION_USERNAME_KEY] = $username;
         $rawAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
         $userAgent = is_string($rawAgent) ? $rawAgent : 'unknown';
         $_SESSION[self::SESSION_FINGERPRINT_KEY] = hash('sha256', $userAgent);
+
+        if ($this->db instanceof DatabaseDriverInterface) {
+            $rawRemote = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+            $ip = is_string($rawRemote) ? $rawRemote : '127.0.0.1';
+
+            /** @var Models\UserSession|null $userSession */
+            $userSession = $this->db->findOneModel(Models\UserSession::class, 'session_id = ?', [$sessId]);
+            if (!$userSession instanceof Models\UserSession) {
+                $userSession = $this->db->dispenseModel(Models\UserSession::class);
+                $userSession->setSessionId($sessId);
+            }
+            $userSession->setUserId($userId);
+            $userSession->setUsername($username);
+            $userSession->setIpAddress($ip);
+            $userSession->setLastActive(date('Y-m-d H:i:s'));
+            $this->db->storeModel($userSession);
+        }
     }
 
     public function logout(): void
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {
             session_start();
+        }
+
+        $sessId = session_id() ?: '';
+        if ($this->db instanceof DatabaseDriverInterface && $sessId !== '') {
+            $userSession = $this->db->findOneModel(Models\UserSession::class, 'session_id = ?', [$sessId]);
+            if ($userSession instanceof Models\UserSession) {
+                $this->db->trashModel($userSession);
+            }
         }
 
         $_SESSION = [];

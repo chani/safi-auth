@@ -15,12 +15,14 @@ use Safi\Core\AbstractController;
 use Safi\Core\Attributes\Route;
 use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Core\Contracts\ViewEngineInterface;
+use Safi\Core\Exception\ValidationException;
 use Safi\Core\Http\Request;
 use Safi\Core\Http\Response;
 use Safi\Core\Services\SecurityService;
 use Safi\Extensions\Auth\AuthService;
 use Safi\Extensions\Auth\Models\LockedIp;
 use Safi\Extensions\Auth\Models\User;
+use Safi\Extensions\Auth\Models\UserSession;
 
 final class AdminController extends AbstractController
 {
@@ -52,7 +54,11 @@ final class AdminController extends AbstractController
         $email = $this->request->post('email');
         $password = $this->request->post('password');
 
-        if (is_string($email) && is_string($password) && $email !== '' && $password !== '') {
+        if (!is_string($email) || filter_var(trim($email), FILTER_VALIDATE_EMAIL) === false) {
+            throw new ValidationException('A valid email address is required.');
+        }
+
+        if (is_string($password) && trim($password) !== '') {
             $user = $this->db->dispenseModel(User::class);
             $user->setEmail($email);
             $user->setPassword($this->authService->hashPassword($password));
@@ -65,13 +71,36 @@ final class AdminController extends AbstractController
         return $this->redirect('/admin/users');
     }
 
+    #[Route('/admin/users/delete', method: 'POST')]
+    public function deleteUser(): Response
+    {
+        $this->validateCsrf();
+        $id = $this->request->post('id');
+
+        if (is_numeric($id)) {
+            $userId = (int) $id;
+            $currentUserId = $_SESSION['auth_user_id'] ?? 0;
+
+            if ($userId !== (int) $currentUserId) {
+                $user = $this->db->loadModel(User::class, $userId);
+                if ($user->getId() > 0) {
+                    $this->db->trashModel($user);
+                }
+            }
+        }
+
+        return $this->redirect('/admin/users');
+    }
+
     #[Route('/admin/sessions', method: 'GET')]
     public function sessions(): Response
     {
+        $activeSessions = $this->db->findModels(UserSession::class, 'ORDER BY last_active DESC');
         $lockedIps = $this->db->findModels(LockedIp::class, 'ORDER BY id DESC');
 
         return $this->render('auth/sessions.twig', [
-            'title' => 'Security & IP Lock Management',
+            'title' => 'Security & Session Management',
+            'activeSessions' => $activeSessions,
             'lockedIps' => $lockedIps,
         ]);
     }

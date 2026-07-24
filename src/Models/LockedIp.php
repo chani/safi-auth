@@ -58,8 +58,8 @@ final class LockedIp implements ModelInterface
 
     private function getProperty(string $property, mixed $default = null): mixed
     {
-	if (is_object($this->entity)) {
-	    /** @phpstan-ignore property.notFound */
+        if (is_object($this->entity)) {
+            /** @phpstan-ignore property.notFound */
             return $this->entity->{$property} ?? $default;
         }
 
