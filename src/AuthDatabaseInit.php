@@ -20,7 +20,7 @@ final readonly class AuthDatabaseInit
     public function initializeSchema(): void
     {
         $this->db->exec("CREATE TABLE IF NOT EXISTS user (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE, password TEXT, role TEXT, created_at TEXT)");
-        $this->db->exec("CREATE TABLE IF NOT EXISTS login_attempt (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, username TEXT, attempted_at TEXT)");
-        $this->db->exec("CREATE TABLE IF NOT EXISTS locked_ip (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT UNIQUE, locked_until TEXT)");
+        $this->db->exec("CREATE TABLE IF NOT EXISTS loginattempt (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT, username TEXT, attempted_at TEXT)");
+        $this->db->exec("CREATE TABLE IF NOT EXISTS lockedip (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT UNIQUE, locked_until TEXT)");
     }
 }
