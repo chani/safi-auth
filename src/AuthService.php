@@ -24,9 +24,7 @@ final class AuthService
         private readonly BruteForceShield $shield,
         private readonly ?DatabaseDriverInterface $db = null,
     ) {
-        if ($this->db instanceof DatabaseDriverInterface) {
-            $this->ensureAdminUserExists();
-        }
+	    // DB side effects removed from constructor to prevent instantiation crashes
     }
 
     public function hashPassword(string $password): string
@@ -134,7 +132,7 @@ final class AuthService
         return $this->shield;
     }
 
-    private function ensureAdminUserExists(): void
+    public function ensureAdminUserExists(): void
     {
         if (!$this->db instanceof DatabaseDriverInterface) {
             return;

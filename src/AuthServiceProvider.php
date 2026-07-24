@@ -30,7 +30,13 @@ final class AuthServiceProvider implements ServiceProviderInterface
     }
 
     #[\Override]
-    public function boot(ContainerInterface $container): void {}
+    public function boot(ContainerInterface $container): void
+    {
+        $auth = $container->get(AuthService::class);
+        if ($auth instanceof AuthService) {
+            $auth->ensureAdminUserExists();
+        }
+    }
 
     private static function getShield(ContainerInterface $container): BruteForceShield
     {
