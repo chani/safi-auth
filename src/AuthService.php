@@ -59,7 +59,7 @@ final class AuthService
         return false;
     }
 
-public function login(int $userId, string $username = 'admin'): void
+    public function login(int $userId, string $username = 'admin'): void
     {
         if (session_status() !== PHP_SESSION_ACTIVE) {
             session_start();
@@ -75,10 +75,9 @@ public function login(int $userId, string $username = 'admin'): void
         $_SESSION[self::SESSION_FINGERPRINT_KEY] = hash('sha256', $userAgent);
 
         if ($this->db instanceof DatabaseDriverInterface) {
-            $rawRemote = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+            $rawRemote = $_SERVER['REMOTE_ADDR'] ?? null;
             $ip = is_string($rawRemote) ? $rawRemote : '127.0.0.1';
 
-            /** @var Models\UserSession|null $userSession */
             $userSession = $this->db->findOneModel(Models\UserSession::class, 'session_id = ?', [$sessId]);
             if (!$userSession instanceof Models\UserSession) {
                 $userSession = $this->db->dispenseModel(Models\UserSession::class);

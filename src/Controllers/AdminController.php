@@ -79,9 +79,10 @@ final class AdminController extends AbstractController
 
         if (is_numeric($id)) {
             $userId = (int) $id;
-            $currentUserId = $_SESSION['auth_user_id'] ?? 0;
+            $rawCurrentUserId = $_SESSION['auth_user_id'] ?? 0;
+            $currentUserId = is_numeric($rawCurrentUserId) ? (int) $rawCurrentUserId : 0;
 
-            if ($userId !== (int) $currentUserId) {
+            if ($userId !== $currentUserId) {
                 $user = $this->db->loadModel(User::class, $userId);
                 if ($user->getId() > 0) {
                     $this->db->trashModel($user);
