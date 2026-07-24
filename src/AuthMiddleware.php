@@ -23,12 +23,11 @@ final readonly class AuthMiddleware implements MiddlewareInterface
     #[\Override]
     public function process(Context $context, RequestHandlerInterface $handler): Response
     {
-        $uri = $context->request->getUri();
         $routeOptions = $context->request->getAttribute('route_options');
         $isPublic = is_array($routeOptions) && isset($routeOptions['public']) && $routeOptions['public'] === true;
 
-        // Public routes as well as /login and /logout are allowed without authentication
-        if ($isPublic || $uri === '/login' || $uri === '/logout') {
+        // Allow access if the target route is explicitly flagged as public
+        if ($isPublic) {
             if (session_status() === PHP_SESSION_ACTIVE) {
                 $_SESSION['auth_redirect_count'] = 0;
             }
