@@ -39,6 +39,7 @@ final class AdminController extends AbstractController
     #[Route('/admin/users', method: 'GET')]
     public function userList(): Response
     {
+        $this->enforceAdminRole();
         $users = $this->db->findModels(User::class, 'ORDER BY id ASC');
 
         return $this->render('auth/users.twig', [
@@ -50,6 +51,7 @@ final class AdminController extends AbstractController
     #[Route('/admin/users/save', method: 'POST')]
     public function saveUser(): Response
     {
+        $this->enforceAdminRole();
         $this->validateCsrf();
         $email = $this->request->post('email');
         $password = $this->request->post('password');
@@ -60,10 +62,10 @@ final class AdminController extends AbstractController
 
         if (is_string($password) && trim($password) !== '') {
             $user = $this->db->dispenseModel(User::class);
-            $user->setEmail($email);
-            $user->setPassword($this->authService->hashPassword($password));
-            $user->setRole('user');
-            $user->setCreatedAt(date('Y-m-d H:i:s'));
+            $user->email = $email;
+            $user->password = $this->authService->hashPassword($password);
+            $user->role = 'user';
+            $user->createdAt = date('Y-m-d H:i:s');
 
             $this->db->storeModel($user);
         }
@@ -74,6 +76,7 @@ final class AdminController extends AbstractController
     #[Route('/admin/users/delete', method: 'POST')]
     public function deleteUser(): Response
     {
+        $this->enforceAdminRole();
         $this->validateCsrf();
         $id = $this->request->post('id');
 
@@ -96,6 +99,7 @@ final class AdminController extends AbstractController
     #[Route('/admin/sessions', method: 'GET')]
     public function sessions(): Response
     {
+        $this->enforceAdminRole();
         $activeSessions = $this->db->findModels(UserSession::class, 'ORDER BY last_active DESC');
         $lockedIps = $this->db->findModels(LockedIp::class, 'ORDER BY id DESC');
 
@@ -109,16 +113,32 @@ final class AdminController extends AbstractController
     #[Route('/admin/sessions/unlock', method: 'POST')]
     public function unlockIp(): Response
     {
+        $this->enforceAdminRole();
         $this->validateCsrf();
         $id = $this->request->post('id');
 
         if (is_numeric($id)) {
             $lockedIp = $this->db->loadModel(LockedIp::class, (int) $id);
             if ($lockedIp->getId() > 0) {
-                $this->db->trashModel($lockedIp);
+                $this->authService->unlockIp($lockedIp);
             }
         }
 
         return $this->redirect('/admin/sessions');
+    }
+
+    private function enforceAdminRole(): void
+    {
+        $rawCurrentUserId = $_SESSION['auth_user_id'] ?? 0;
+        $currentUserId = is_numeric($rawCurrentUserId) ? (int) $rawCurrentUserId : 0;
+
+        if ($currentUserId <= 0) {
+            throw new ValidationException('Access denied: Authentication required.');
+        }
+
+        $user = $this->db->loadModel(User::class, $currentUserId);
+        if ($user->role !== 'admin') {
+            throw new ValidationException('Access denied: Administrative privileges required.');
+        }
     }
 }

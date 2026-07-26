@@ -11,7 +11,7 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Models;
 
-final class LockedIp extends AbstractModel
+final class LoginAttempt extends AbstractModel
 {
     public string $ip {
         get {
@@ -23,13 +23,23 @@ final class LockedIp extends AbstractModel
         }
     }
 
-    public string $lockedUntil {
+    public string $username {
         get {
-            $val = $this->getProperty('locked_until', '');
+            $val = $this->getProperty('username', '');
             return is_string($val) ? $val : '';
         }
         set {
-            $this->setProperty('locked_until', $value);
+            $this->setProperty('username', trim($value));
+        }
+    }
+
+    public string $attemptedAt {
+        get {
+            $val = $this->getProperty('attempted_at', '');
+            return is_string($val) ? $val : '';
+        }
+        set {
+            $this->setProperty('attempted_at', $value);
         }
     }
 }

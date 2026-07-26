@@ -6,9 +6,9 @@ Authentication, session management, and brute-force shielding extension for the 
 
 ## Features
 
-* **Session Security:** Session ID regeneration and User-Agent fingerprinting (`µADR-035`).
-* **Brute-Force Shield:** Sliding window rate limiting for authentication attempts.
-* **Database Agnostic:** Interacts exclusively through `DatabaseDriverInterface` (`µADR-036`).
+* **Session Security:** Session ID regeneration and User-Agent fingerprinting.
+* **Persistent Brute-Force Shield:** Cache-backed attempt tracking and rate limiting.
+* **Database Agnostic:** Interacts exclusively through `DatabaseDriverInterface`.
 
 ---
 

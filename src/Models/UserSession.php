@@ -13,58 +13,53 @@ namespace Safi\Extensions\Auth\Models;
 
 final class UserSession extends AbstractModel
 {
-    public function getSessionId(): string
-    {
-        $val = $this->getProperty('session_id', '');
-        return is_string($val) ? $val : '';
+    public string $sessionId {
+        get {
+            $val = $this->getProperty('session_id', '');
+            return is_string($val) ? $val : '';
+        }
+        set {
+            $this->setProperty('session_id', $value);
+        }
     }
 
-    public function setSessionId(string $id): void
-    {
-        $this->setProperty('session_id', $id);
+    public int $userId {
+        get {
+            $val = $this->getProperty('user_id', 0);
+            return is_numeric($val) ? (int) $val : 0;
+        }
+        set {
+            $this->setProperty('user_id', $value);
+        }
     }
 
-    public function getUserId(): int
-    {
-        $val = $this->getProperty('user_id', 0);
-        return is_numeric($val) ? (int) $val : 0;
+    public string $username {
+        get {
+            $val = $this->getProperty('username', '');
+            return is_string($val) ? $val : '';
+        }
+        set {
+            $this->setProperty('username', trim($value));
+        }
     }
 
-    public function setUserId(int $id): void
-    {
-        $this->setProperty('user_id', $id);
+    public string $ipAddress {
+        get {
+            $val = $this->getProperty('ip_address', '');
+            return is_string($val) ? $val : '';
+        }
+        set {
+            $this->setProperty('ip_address', $value);
+        }
     }
 
-    public function getUsername(): string
-    {
-        $val = $this->getProperty('username', '');
-        return is_string($val) ? $val : '';
-    }
-
-    public function setUsername(string $username): void
-    {
-        $this->setProperty('username', trim($username));
-    }
-
-    public function getIpAddress(): string
-    {
-        $val = $this->getProperty('ip_address', '');
-        return is_string($val) ? $val : '';
-    }
-
-    public function setIpAddress(string $ip): void
-    {
-        $this->setProperty('ip_address', $ip);
-    }
-
-    public function getLastActive(): string
-    {
-        $val = $this->getProperty('last_active', '');
-        return is_string($val) ? $val : '';
-    }
-
-    public function setLastActive(string $dateTime): void
-    {
-        $this->setProperty('last_active', $dateTime);
+    public string $lastActive {
+        get {
+            $val = $this->getProperty('last_active', '');
+            return is_string($val) ? $val : '';
+        }
+        set {
+            $this->setProperty('last_active', $value);
+        }
     }
 }

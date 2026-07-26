@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace Safi\Extensions\Auth\Models;
 
 use Safi\Core\Contracts\ModelInterface;
+use stdClass;
 
 /**
  * @psalm-suppress UndefinedPropertyAssignment
@@ -19,7 +20,12 @@ use Safi\Core\Contracts\ModelInterface;
  */
 abstract class AbstractModel implements ModelInterface
 {
-    public function __construct(protected readonly mixed $entity = null) {}
+    protected mixed $entity;
+
+    public function __construct(mixed $entity = null)
+    {
+        $this->entity = $entity ?? new stdClass();
+    }
 
     #[\Override]
     public function unwrap(): mixed
@@ -46,9 +52,11 @@ abstract class AbstractModel implements ModelInterface
 
     protected function setProperty(string $property, mixed $value): void
     {
-        if (is_object($this->entity)) {
-            /** @phpstan-ignore property.notFound */
-            $this->entity->{$property} = $value;
+        if (!is_object($this->entity)) {
+            $this->entity = new stdClass();
         }
+
+        /** @phpstan-ignore property.notFound */
+        $this->entity->{$property} = $value;
     }
 }

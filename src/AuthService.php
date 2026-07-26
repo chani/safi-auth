@@ -12,7 +12,10 @@ declare(strict_types=1);
 namespace Safi\Extensions\Auth;
 
 use Safi\Core\Contracts\DatabaseDriverInterface;
+use Safi\Extensions\Auth\Models\LockedIp;
+use Safi\Extensions\Auth\Models\LoginAttempt;
 use Safi\Extensions\Auth\Models\User;
+use Safi\Extensions\Auth\Models\UserSession;
 
 final class AuthService
 {
@@ -23,9 +26,7 @@ final class AuthService
     public function __construct(
         private readonly BruteForceShield $shield,
         private readonly ?DatabaseDriverInterface $db = null,
-    ) {
-        // DB side effects removed from constructor to prevent instantiation crashes
-    }
+    ) {}
 
     public function hashPassword(string $password): string
     {
@@ -39,23 +40,27 @@ final class AuthService
 
     public function loginWithCredentials(string $username, string $password): bool
     {
-        if (!$this->db instanceof DatabaseDriverInterface || $this->shield->isLocked($username)) {
+        $rawRemote = $_SERVER['REMOTE_ADDR'] ?? null;
+        $ip = is_string($rawRemote) ? $rawRemote : '127.0.0.1';
+        $shieldKey = $ip . ':' . $username;
+
+        if (!$this->db instanceof DatabaseDriverInterface || $this->shield->isLocked($shieldKey)) {
             return false;
         }
 
         $user = $this->db->findOneModel(User::class, 'email = ?', [$username]);
         if (!$user instanceof User) {
-            $this->shield->recordFailure($username);
+            $this->recordFailureAndAudit($username, $ip, $shieldKey);
             return false;
         }
 
-        if (password_verify($password, $user->getPassword())) {
-            $this->shield->reset($username);
-            $this->login($user->getId(), $user->getEmail());
+        if (password_verify($password, $user->password)) {
+            $this->shield->reset($shieldKey);
+            $this->login($user->getId(), $user->email);
             return true;
         }
 
-        $this->shield->recordFailure($username);
+        $this->recordFailureAndAudit($username, $ip, $shieldKey);
         return false;
     }
 
@@ -78,15 +83,15 @@ final class AuthService
             $rawRemote = $_SERVER['REMOTE_ADDR'] ?? null;
             $ip = is_string($rawRemote) ? $rawRemote : '127.0.0.1';
 
-            $userSession = $this->db->findOneModel(Models\UserSession::class, 'session_id = ?', [$sessId]);
-            if (!$userSession instanceof Models\UserSession) {
-                $userSession = $this->db->dispenseModel(Models\UserSession::class);
-                $userSession->setSessionId($sessId);
+            $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
+            if (!$userSession instanceof UserSession) {
+                $userSession = $this->db->dispenseModel(UserSession::class);
+                $userSession->sessionId = $sessId;
             }
-            $userSession->setUserId($userId);
-            $userSession->setUsername($username);
-            $userSession->setIpAddress($ip);
-            $userSession->setLastActive(date('Y-m-d H:i:s'));
+            $userSession->userId = $userId;
+            $userSession->username = $username;
+            $userSession->ipAddress = $ip;
+            $userSession->lastActive = date('Y-m-d H:i:s');
             $this->db->storeModel($userSession);
         }
     }
@@ -99,8 +104,8 @@ final class AuthService
 
         $sessId = session_id() ?: '';
         if ($this->db instanceof DatabaseDriverInterface && $sessId !== '') {
-            $userSession = $this->db->findOneModel(Models\UserSession::class, 'session_id = ?', [$sessId]);
-            if ($userSession instanceof Models\UserSession) {
+            $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
+            if ($userSession instanceof UserSession) {
                 $this->db->trashModel($userSession);
             }
         }
@@ -137,7 +142,7 @@ final class AuthService
 
         $rawAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
         $currentAgent = is_string($rawAgent) ? $rawAgent : 'unknown';
-        $expectedHash = $_SESSION[self::SESSION_FINGERPRINT_KEY] ?? '';
+        $expectedHash = $_SESSION[self::SESSION_FINGERPRINT_KEY] ?? null;
 
         if (!is_string($expectedHash) || !hash_equals($expectedHash, hash('sha256', $currentAgent))) {
             $this->logout();
@@ -157,6 +162,26 @@ final class AuthService
         return $this->shield;
     }
 
+    public function unlockIp(LockedIp $lockedIp): void
+    {
+        $ip = $lockedIp->ip;
+        if ($ip !== '') {
+            $this->shield->reset($ip);
+
+            if ($this->db instanceof DatabaseDriverInterface) {
+                /** @var list<LoginAttempt> $attempts */
+                $attempts = $this->db->findModels(LoginAttempt::class, 'ip = ?', [$ip]);
+                foreach ($attempts as $attempt) {
+                    $this->shield->reset($ip . ':' . $attempt->username);
+                }
+            }
+        }
+
+        if ($this->db instanceof DatabaseDriverInterface && $lockedIp->getId() > 0) {
+            $this->db->trashModel($lockedIp);
+        }
+    }
+
     public function ensureAdminUserExists(): void
     {
         if (!$this->db instanceof DatabaseDriverInterface) {
@@ -169,17 +194,44 @@ final class AuthService
 
             $admin = $this->db->findOneModel(User::class, 'email = ?', ['admin']);
 
-            if (!$admin instanceof \Safi\Core\Contracts\ModelInterface) {
+            if (!$admin instanceof User) {
                 $user = $this->db->dispenseModel(User::class);
-                $user->setEmail('admin');
-                $user->setPassword($this->hashPassword('admin'));
-                $user->setRole('admin');
-                $user->setCreatedAt(date('Y-m-d H:i:s'));
+                $user->email = 'admin';
+                $user->password = $this->hashPassword('admin');
+                $user->role = 'admin';
+                $user->createdAt = date('Y-m-d H:i:s');
 
                 $this->db->storeModel($user);
             }
         } catch (\Throwable) {
-            // Ignored if DB not fully ready
+            // Guard
+        }
+    }
+
+    private function recordFailureAndAudit(string $username, string $ip, string $shieldKey): void
+    {
+        $this->shield->recordFailure($shieldKey);
+
+        if ($this->db instanceof DatabaseDriverInterface) {
+            try {
+                $attempt = $this->db->dispenseModel(LoginAttempt::class);
+                $attempt->ip = $ip;
+                $attempt->username = $username;
+                $attempt->attemptedAt = date('Y-m-d H:i:s');
+                $this->db->storeModel($attempt);
+
+                if ($this->shield->isLocked($shieldKey)) {
+                    $lockedIp = $this->db->findOneModel(LockedIp::class, 'ip = ?', [$ip]);
+                    if (!$lockedIp instanceof LockedIp) {
+                        $lockedIp = $this->db->dispenseModel(LockedIp::class);
+                        $lockedIp->ip = $ip;
+                    }
+                    $lockedIp->lockedUntil = date('Y-m-d H:i:s', time() + 300);
+                    $this->db->storeModel($lockedIp);
+                }
+            } catch (\Throwable) {
+                // Guard
+            }
         }
     }
 }

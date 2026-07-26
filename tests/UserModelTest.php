@@ -1,5 +1,12 @@
 <?php
 
+/**
+ * Safi Microframework - safi-auth
+ * @author Jean Bruenn
+ * @copyright 2026 All Rights Reserved
+ * @see https://github.com/chani/safi-auth
+ */
+
 declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Tests;
@@ -11,22 +18,18 @@ final class UserModelTest extends TestCase
 {
     public function testHandlesEmailTrimmingAndLowercasing(): void
     {
-        $entity = new \stdClass();
-        $user = new User($entity);
-
-        $user->setEmail('  User@Domain.COM  ');
-        $this->assertSame('user@domain.com', $user->getEmail());
+        $user = new User();
+        $user->email = '  TEST@Example.COM  ';
+        $this->assertSame('test@example.com', $user->email);
     }
 
     public function testHandlesPasswordAndRoleSetters(): void
     {
-        $entity = new \stdClass();
-        $user = new User($entity);
+        $user = new User();
+        $user->password = 'hashed_secret';
+        $user->role = 'admin';
 
-        $user->setPassword('hashed_pass');
-        $user->setRole('admin');
-
-        $this->assertSame('hashed_pass', $user->getPassword());
-        $this->assertSame('admin', $user->getRole());
+        $this->assertSame('hashed_secret', $user->password);
+        $this->assertSame('admin', $user->role);
     }
 }

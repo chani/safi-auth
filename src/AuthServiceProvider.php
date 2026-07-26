@@ -4,7 +4,7 @@
  * Safi Microframework - safi-auth
  * @author Jean Bruenn
  * @copyright 2026 All Rights Reserved
- * @see https://github.com/chani/safi-auth
+ * @see [https://github.com/chani/safi-auth](https://github.com/chani/safi-auth)
  */
 
 declare(strict_types=1);
@@ -12,6 +12,7 @@ declare(strict_types=1);
 namespace Safi\Extensions\Auth;
 
 use Psr\Container\ContainerInterface;
+use Psr\SimpleCache\CacheInterface;
 use Safi\Core\Contracts\ContainerRegistrarInterface;
 use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Core\Contracts\ServiceProviderInterface;
@@ -21,7 +22,10 @@ final class AuthServiceProvider implements ServiceProviderInterface
     #[\Override]
     public function register(ContainerRegistrarInterface $registrar): void
     {
-        $registrar->set(BruteForceShield::class, static fn(): BruteForceShield => new BruteForceShield());
+        $registrar->set(BruteForceShield::class, static function (ContainerInterface $c): BruteForceShield {
+            $cache = $c->has(CacheInterface::class) ? $c->get(CacheInterface::class) : null;
+            return new BruteForceShield($cache instanceof CacheInterface ? $cache : null);
+        });
 
         $registrar->set(AuthService::class, static fn(ContainerInterface $c): AuthService => new AuthService(
             self::getShield($c),
@@ -30,13 +34,7 @@ final class AuthServiceProvider implements ServiceProviderInterface
     }
 
     #[\Override]
-    public function boot(ContainerInterface $container): void
-    {
-        $auth = $container->get(AuthService::class);
-        if ($auth instanceof AuthService) {
-            $auth->ensureAdminUserExists();
-        }
-    }
+    public function boot(ContainerInterface $container): void {}
 
     private static function getShield(ContainerInterface $container): BruteForceShield
     {
