@@ -4,7 +4,7 @@
  * Safi Microframework - safi-auth
  * @author Jean Bruenn
  * @copyright 2026 All Rights Reserved
- * @see [https://github.com/chani/safi-auth](https://github.com/chani/safi-auth)
+ * @see https://github.com/chani/safi-auth
  */
 
 declare(strict_types=1);
@@ -16,6 +16,7 @@ use Psr\SimpleCache\CacheInterface;
 use Safi\Core\Contracts\ContainerRegistrarInterface;
 use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Core\Contracts\ServiceProviderInterface;
+use Safi\Extensions\Session\SessionService;
 
 final class AuthServiceProvider implements ServiceProviderInterface
 {
@@ -27,9 +28,15 @@ final class AuthServiceProvider implements ServiceProviderInterface
             return new BruteForceShield($cache instanceof CacheInterface ? $cache : null);
         });
 
-        $registrar->set(AuthService::class, static fn(ContainerInterface $c): AuthService => new AuthService(
+        $registrar->set(AuthService::class, static fn(ContainerInterface$c): AuthService => new AuthService(
             self::getShield($c),
             self::getDb($c),
+            self::getSession($c),
+        ));
+
+        $registrar->set(AuthMiddleware::class, static fn(ContainerInterface$c): AuthMiddleware => new AuthMiddleware(
+            self::getAuth($c),
+            self::getSession($c),
         ));
     }
 
@@ -50,5 +57,21 @@ final class AuthServiceProvider implements ServiceProviderInterface
         assert($db instanceof DatabaseDriverInterface);
 
         return $db;
+    }
+
+    private static function getAuth(ContainerInterface $container): AuthService
+    {
+        $auth = $container->get(AuthService::class);
+        assert($auth instanceof AuthService);
+
+        return $auth;
+    }
+
+    private static function getSession(ContainerInterface $container): SessionService
+    {
+        $session = $container->get(SessionService::class);
+        assert($session instanceof SessionService);
+
+        return $session;
     }
 }

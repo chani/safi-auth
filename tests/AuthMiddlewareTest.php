@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Safi\Extensions\Auth\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Safi\Core\Http\Context;
 use Safi\Core\Http\Request;
 use Safi\Core\Http\RequestHandlerInterface;
@@ -14,20 +14,21 @@ use Safi\Core\Http\Response;
 use Safi\Extensions\Auth\AuthMiddleware;
 use Safi\Extensions\Auth\AuthService;
 use Safi\Extensions\Auth\BruteForceShield;
+use Safi\Extensions\Session\SessionService;
 
 final class AuthMiddlewareTest extends TestCase
 {
     public function testPassesPublicRoutesUnauthenticated(): void
     {
-        $auth = new AuthService(new BruteForceShield());
-        $middleware = new AuthMiddleware($auth);
+        $session = new SessionService(new NullLogger());
+        $auth = new AuthService(new BruteForceShield(), null, $session);
+        $middleware = new AuthMiddleware($auth, $session);
 
         $request = new Request(server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/login']);
         $response = new Response();
         $logger = $this->createMock(LoggerInterface::class);
-        $container = $this->createMock(ContainerInterface::class);
 
-        $context = new Context($request, $response, $logger, $container);
+        $context = new Context($request, $response, $logger);
 
         $handler = $this->createMock(RequestHandlerInterface::class);
         $handler->expects($this->once())
@@ -40,15 +41,15 @@ final class AuthMiddlewareTest extends TestCase
 
     public function testRedirectsUnauthenticatedUserOnProtectedPath(): void
     {
-        $auth = new AuthService(new BruteForceShield());
-        $middleware = new AuthMiddleware($auth);
+        $session = new SessionService(new NullLogger());
+        $auth = new AuthService(new BruteForceShield(), null, $session);
+        $middleware = new AuthMiddleware($auth, $session);
 
         $request = new Request(server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/admin/dashboard']);
         $response = new Response();
         $logger = $this->createMock(LoggerInterface::class);
-        $container = $this->createMock(ContainerInterface::class);
 
-        $context = new Context($request, $response, $logger, $container);
+        $context = new Context($request, $response, $logger);
 
         $handler = $this->createMock(RequestHandlerInterface::class);
         $handler->expects($this->never())->method('handle');
@@ -57,7 +58,6 @@ final class AuthMiddlewareTest extends TestCase
 
         $this->assertSame(302, $res->getStatusCode());
 
-        // Unabhängige & universelle Header-Extraktion über Reflection
         $location = null;
         $ref = new \ReflectionClass($res);
         foreach ($ref->getProperties() as $prop) {

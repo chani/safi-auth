@@ -11,11 +11,13 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth;
 
+use Psr\Log\NullLogger;
 use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Extensions\Auth\Models\LockedIp;
 use Safi\Extensions\Auth\Models\LoginAttempt;
 use Safi\Extensions\Auth\Models\User;
 use Safi\Extensions\Auth\Models\UserSession;
+use Safi\Extensions\Session\SessionService;
 
 final class AuthService
 {
@@ -26,6 +28,7 @@ final class AuthService
     public function __construct(
         private readonly BruteForceShield $shield,
         private readonly ?DatabaseDriverInterface $db = null,
+        private readonly ?SessionService $session = null,
     ) {}
 
     public function hashPassword(string $password): string
@@ -66,18 +69,17 @@ final class AuthService
 
     public function login(int $userId, string $username = 'admin'): void
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            session_start();
-        }
+        $session = $this->getSession();
+        $session->start();
+        $session->regenerateId(true);
 
-        session_regenerate_id(true);
+        $sessId = $session->getId();
+        $session->set(self::SESSION_USER_KEY, $userId);
+        $session->set(self::SESSION_USERNAME_KEY, $username);
 
-        $sessId = session_id() ?: '';
-        $_SESSION[self::SESSION_USER_KEY] = $userId;
-        $_SESSION[self::SESSION_USERNAME_KEY] = $username;
         $rawAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
         $userAgent = is_string($rawAgent) ? $rawAgent : 'unknown';
-        $_SESSION[self::SESSION_FINGERPRINT_KEY] = hash('sha256', $userAgent);
+        $session->set(self::SESSION_FINGERPRINT_KEY, hash('sha256', $userAgent));
 
         if ($this->db instanceof DatabaseDriverInterface) {
             $rawRemote = $_SERVER['REMOTE_ADDR'] ?? null;
@@ -98,11 +100,9 @@ final class AuthService
 
     public function logout(): void
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            session_start();
-        }
+        $session = $this->getSession();
+        $sessId = $session->getId();
 
-        $sessId = session_id() ?: '';
         if ($this->db instanceof DatabaseDriverInterface && $sessId !== '') {
             $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
             if ($userSession instanceof UserSession) {
@@ -110,39 +110,19 @@ final class AuthService
             }
         }
 
-        $_SESSION = [];
-
-        if (ini_get('session.use_cookies') !== '') {
-            $params = session_get_cookie_params();
-            $sessionName = session_name();
-            $name = is_string($sessionName) ? $sessionName : 'SAFI_SESSID';
-
-            setcookie($name, '', [
-                'expires' => time() - 42000,
-                'path' => $params['path'],
-                'domain' => $params['domain'],
-                'secure' => $params['secure'],
-                'httponly' => $params['httponly'],
-                'samesite' => $params['samesite'],
-            ]);
-        }
-
-        session_destroy();
+        $session->destroy();
     }
 
     public function check(): bool
     {
-        if (session_status() !== PHP_SESSION_ACTIVE) {
-            return false;
-        }
-
-        if (!isset($_SESSION[self::SESSION_USER_KEY])) {
+        $session = $this->getSession();
+        if (!$session->has(self::SESSION_USER_KEY)) {
             return false;
         }
 
         $rawAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
         $currentAgent = is_string($rawAgent) ? $rawAgent : 'unknown';
-        $expectedHash = $_SESSION[self::SESSION_FINGERPRINT_KEY] ?? null;
+        $expectedHash = $session->get(self::SESSION_FINGERPRINT_KEY);
 
         if (!is_string($expectedHash) || !hash_equals($expectedHash, hash('sha256', $currentAgent))) {
             $this->logout();
@@ -169,7 +149,6 @@ final class AuthService
             $this->shield->reset($ip);
 
             if ($this->db instanceof DatabaseDriverInterface) {
-                /** @var list<LoginAttempt> $attempts */
                 $attempts = $this->db->findModels(LoginAttempt::class, 'ip = ?', [$ip]);
                 foreach ($attempts as $attempt) {
                     $this->shield->reset($ip . ':' . $attempt->username);
@@ -206,6 +185,11 @@ final class AuthService
         } catch (\Throwable) {
             // Guard
         }
+    }
+
+    private function getSession(): SessionService
+    {
+        return $this->session ?? new SessionService(new NullLogger());
     }
 
     private function recordFailureAndAudit(string $username, string $ip, string $shieldKey): void

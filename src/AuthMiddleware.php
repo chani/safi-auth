@@ -11,54 +11,52 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth;
 
+use Psr\Log\NullLogger;
 use Safi\Core\Http\Context;
 use Safi\Core\Http\MiddlewareInterface;
 use Safi\Core\Http\RequestHandlerInterface;
 use Safi\Core\Http\Response;
+use Safi\Extensions\Session\SessionService;
 
 final readonly class AuthMiddleware implements MiddlewareInterface
 {
-    public function __construct(private AuthService $auth) {}
+    public function __construct(
+        private AuthService $auth,
+        private ?SessionService $session = null,
+    ) {}
 
     #[\Override]
     public function process(Context $context, RequestHandlerInterface $handler): Response
     {
+        $session = $this->getSession();
         $uri = $context->request->getUri();
         $routeOptions = $context->request->getAttribute('route_options');
         $isPublic = is_array($routeOptions) && isset($routeOptions['public']) && $routeOptions['public'] === true;
 
-        // Allow routes marked with public: true attribute as well as fallback login/logout URIs
         if ($isPublic || $uri === '/login' || $uri === '/logout') {
-            if (session_status() === PHP_SESSION_ACTIVE) {
-                $_SESSION['auth_redirect_count'] = 0;
-            }
-
+            $session->set('auth_redirect_count', 0);
             return $handler->handle($context);
         }
 
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            $rawCount = $_SESSION['auth_redirect_count'] ?? 0;
-            $redirects = is_numeric($rawCount) ? (int) $rawCount : 0;
-            if ($redirects > 5) {
-                $_SESSION['auth_redirect_count'] = 0;
-                return new Response('Too Many Redirects (Loop Shield Blocked)', 429);
-            }
+        $rawCount = $session->get('auth_redirect_count', 0);
+        $redirects = is_numeric($rawCount) ? (int) $rawCount : 0;
+        if ($redirects > 5) {
+            $session->set('auth_redirect_count', 0);
+            return new Response('Too Many Redirects (Loop Shield Blocked)', 429);
         }
 
         if (!$this->auth->isAuthenticated()) {
-            if (session_status() === PHP_SESSION_ACTIVE) {
-                $rawCount = $_SESSION['auth_redirect_count'] ?? 0;
-                $currentCount = is_numeric($rawCount) ? (int) $rawCount : 0;
-                $_SESSION['auth_redirect_count'] = $currentCount + 1;
-            }
-
+            $session->set('auth_redirect_count', $redirects + 1);
             return new Response('Redirecting to login...', 302, ['Location' => '/login']);
         }
 
-        if (session_status() === PHP_SESSION_ACTIVE) {
-            $_SESSION['auth_redirect_count'] = 0;
-        }
+        $session->set('auth_redirect_count', 0);
 
         return $handler->handle($context);
+    }
+
+    private function getSession(): SessionService
+    {
+        return $this->session ?? new SessionService(new NullLogger());
     }
 }

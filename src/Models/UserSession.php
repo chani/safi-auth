@@ -11,6 +11,8 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Models;
 
+use Safi\Extensions\DbRedBean\AbstractModel;
+
 final class UserSession extends AbstractModel
 {
     public string $sessionId {

@@ -11,10 +11,12 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Controllers;
 
+use Psr\Log\NullLogger;
 use Safi\Core\AbstractController;
 use Safi\Core\Attributes\Route;
 use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Core\Contracts\ViewEngineInterface;
+use Safi\Core\Exception\ForbiddenException;
 use Safi\Core\Exception\ValidationException;
 use Safi\Core\Http\Request;
 use Safi\Core\Http\Response;
@@ -23,6 +25,7 @@ use Safi\Extensions\Auth\AuthService;
 use Safi\Extensions\Auth\Models\LockedIp;
 use Safi\Extensions\Auth\Models\User;
 use Safi\Extensions\Auth\Models\UserSession;
+use Safi\Extensions\Session\SessionService;
 
 final class AdminController extends AbstractController
 {
@@ -32,6 +35,7 @@ final class AdminController extends AbstractController
         SecurityService $security,
         DatabaseDriverInterface $db,
         private readonly AuthService $authService,
+        private readonly ?SessionService $session = null,
     ) {
         parent::__construct($view, $request, $security, $db);
     }
@@ -42,7 +46,7 @@ final class AdminController extends AbstractController
         $this->enforceAdminRole();
         $users = $this->db->findModels(User::class, 'ORDER BY id ASC');
 
-        return $this->render('auth/users.twig', [
+        return $this->render('@Auth/users.twig', [
             'title' => 'User Directory Management',
             'users' => $users,
         ]);
@@ -82,7 +86,7 @@ final class AdminController extends AbstractController
 
         if (is_numeric($id)) {
             $userId = (int) $id;
-            $rawCurrentUserId = $_SESSION['auth_user_id'] ?? 0;
+            $rawCurrentUserId = $this->getSession()->get('auth_user_id', 0);
             $currentUserId = is_numeric($rawCurrentUserId) ? (int) $rawCurrentUserId : 0;
 
             if ($userId !== $currentUserId) {
@@ -103,7 +107,7 @@ final class AdminController extends AbstractController
         $activeSessions = $this->db->findModels(UserSession::class, 'ORDER BY last_active DESC');
         $lockedIps = $this->db->findModels(LockedIp::class, 'ORDER BY id DESC');
 
-        return $this->render('auth/sessions.twig', [
+        return $this->render('@Auth/sessions.twig', [
             'title' => 'Security & Session Management',
             'activeSessions' => $activeSessions,
             'lockedIps' => $lockedIps,
@@ -129,16 +133,21 @@ final class AdminController extends AbstractController
 
     private function enforceAdminRole(): void
     {
-        $rawCurrentUserId = $_SESSION['auth_user_id'] ?? 0;
+        $rawCurrentUserId = $this->getSession()->get('auth_user_id', 0);
         $currentUserId = is_numeric($rawCurrentUserId) ? (int) $rawCurrentUserId : 0;
 
         if ($currentUserId <= 0) {
-            throw new ValidationException('Access denied: Authentication required.');
+            throw new ForbiddenException('Access denied: Authentication required.');
         }
 
         $user = $this->db->loadModel(User::class, $currentUserId);
         if ($user->role !== 'admin') {
-            throw new ValidationException('Access denied: Administrative privileges required.');
+            throw new ForbiddenException('Access denied: Administrative privileges required.');
         }
+    }
+
+    private function getSession(): SessionService
+    {
+        return $this->session ?? new SessionService(new NullLogger());
     }
 }

@@ -39,7 +39,7 @@ final class AuthController extends AbstractController
             return $this->redirect('/hello');
         }
 
-        return $this->render('auth/login.twig', [
+        return $this->render('@Auth/login.twig', [
             'title' => 'Sign In - Safi Portal',
         ]);
     }
@@ -56,7 +56,7 @@ final class AuthController extends AbstractController
             return $this->redirect('/hello');
         }
 
-        return $this->render('auth/login.twig', [
+        return $this->render('@Auth/login.twig', [
             'title' => 'Sign In - Safi Portal',
             'error' => 'Invalid username or password credentials.',
         ]);

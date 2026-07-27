@@ -11,6 +11,8 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Models;
 
+use Safi\Extensions\DbRedBean\AbstractModel;
+
 final class LockedIp extends AbstractModel
 {
     public string $ip {
