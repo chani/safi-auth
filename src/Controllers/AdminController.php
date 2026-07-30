@@ -11,7 +11,6 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Controllers;
 
-use Psr\Log\NullLogger;
 use Safi\Core\AbstractController;
 use Safi\Core\Attributes\Route;
 use Safi\Core\Contracts\DatabaseDriverInterface;
@@ -25,7 +24,7 @@ use Safi\Extensions\Auth\AuthService;
 use Safi\Extensions\Auth\Models\LockedIp;
 use Safi\Extensions\Auth\Models\User;
 use Safi\Extensions\Auth\Models\UserSession;
-use Safi\Extensions\Session\SessionService;
+use Safi\Extensions\Session\SessionServiceInterface;
 
 final class AdminController extends AbstractController
 {
@@ -35,7 +34,7 @@ final class AdminController extends AbstractController
         SecurityService $security,
         DatabaseDriverInterface $db,
         private readonly AuthService $authService,
-        private readonly ?SessionService $session = null,
+        private readonly SessionServiceInterface $session,
     ) {
         parent::__construct($view, $request, $security, $db);
     }
@@ -86,7 +85,7 @@ final class AdminController extends AbstractController
 
         if (is_numeric($id)) {
             $userId = (int) $id;
-            $rawCurrentUserId = $this->getSession()->get('auth_user_id', 0);
+            $rawCurrentUserId = $this->session->get('auth_user_id', 0);
             $currentUserId = is_numeric($rawCurrentUserId) ? (int) $rawCurrentUserId : 0;
 
             if ($userId !== $currentUserId) {
@@ -133,7 +132,7 @@ final class AdminController extends AbstractController
 
     private function enforceAdminRole(): void
     {
-        $rawCurrentUserId = $this->getSession()->get('auth_user_id', 0);
+        $rawCurrentUserId = $this->session->get('auth_user_id', 0);
         $currentUserId = is_numeric($rawCurrentUserId) ? (int) $rawCurrentUserId : 0;
 
         if ($currentUserId <= 0) {
@@ -144,10 +143,5 @@ final class AdminController extends AbstractController
         if ($user->role !== 'admin') {
             throw new ForbiddenException('Access denied: Administrative privileges required.');
         }
-    }
-
-    private function getSession(): SessionService
-    {
-        return $this->session ?? new SessionService(new NullLogger());
     }
 }
