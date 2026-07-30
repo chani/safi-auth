@@ -16,7 +16,6 @@ use Safi\Core\Http\MiddlewareInterface;
 use Safi\Core\Http\RequestHandlerInterface;
 use Safi\Core\Http\Response;
 use Safi\Extensions\Session\SessionServiceInterface;
-use Safi\Wajha\WajhaDispatcher;
 
 final readonly class AuthMiddleware implements MiddlewareInterface
 {
@@ -29,11 +28,12 @@ final readonly class AuthMiddleware implements MiddlewareInterface
     public function process(Context $context, RequestHandlerInterface $handler): Response
     {
         $uri = $context->request->getUri();
-        $routeStatus = $context->request->getAttribute('route_status');
+        $routeHandler = $context->request->getAttribute('route_handler');
         $routeOptions = $context->request->getAttribute('route_options');
         $isPublic = is_array($routeOptions) && isset($routeOptions['public']) && $routeOptions['public'] === true;
 
-        if ($routeStatus === WajhaDispatcher::NOT_FOUND || $routeStatus === WajhaDispatcher::METHOD_NOT_ALLOWED) {
+        // Router miss (404/405): Pass through directly to let kernel/router render the error
+        if ($routeHandler === null) {
             return $handler->handle($context);
         }
 

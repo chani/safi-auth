@@ -111,8 +111,12 @@ final class AuthService
             return false;
         }
 
-        $userId = (int) $this->session->get(self::SESSION_USER_KEY, 0);
-        $username = (string) $this->session->get(self::SESSION_USERNAME_KEY, 'admin');
+        $rawUserId = $this->session->get(self::SESSION_USER_KEY, 0);
+        $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
+
+        $rawUsername = $this->session->get(self::SESSION_USERNAME_KEY, 'admin');
+        $username = is_string($rawUsername) ? $rawUsername : 'admin';
+
         $this->syncUserSessionToDb($this->session->getId(), $userId, $username);
 
         return true;
@@ -165,7 +169,8 @@ final class AuthService
             $userSession->ipAddress = $ip;
             $userSession->lastActive = date('Y-m-d H:i:s');
             $this->db->storeModel($userSession);
-        } catch (\Throwable) {}
+        } catch (\Throwable) {
+        }
     }
 
     private function recordFailureAndAudit(string $username, string $ip, string $shieldKey): void
@@ -188,6 +193,7 @@ final class AuthService
                 $lockedIp->lockedUntil = date('Y-m-d H:i:s', time() + 300);
                 $this->db->storeModel($lockedIp);
             }
-        } catch (\Throwable) {}
+        } catch (\Throwable) {
+        }
     }
 }

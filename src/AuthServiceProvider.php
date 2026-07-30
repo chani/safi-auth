@@ -16,7 +16,7 @@ use Psr\SimpleCache\CacheInterface;
 use Safi\Core\Contracts\ContainerRegistrarInterface;
 use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Core\Contracts\ServiceProviderInterface;
-use Safi\Extensions\Session\SessionService;
+use Safi\Extensions\Session\SessionServiceInterface;
 
 final class AuthServiceProvider implements ServiceProviderInterface
 {
@@ -28,13 +28,13 @@ final class AuthServiceProvider implements ServiceProviderInterface
             return new BruteForceShield($cache instanceof CacheInterface ? $cache : null);
         });
 
-        $registrar->set(AuthService::class, static fn(ContainerInterface$c): AuthService => new AuthService(
+        $registrar->set(AuthService::class, static fn(ContainerInterface $c): AuthService => new AuthService(
             self::getShield($c),
             self::getDb($c),
             self::getSession($c),
         ));
 
-        $registrar->set(AuthMiddleware::class, static fn(ContainerInterface$c): AuthMiddleware => new AuthMiddleware(
+        $registrar->set(AuthMiddleware::class, static fn(ContainerInterface $c): AuthMiddleware => new AuthMiddleware(
             self::getAuth($c),
             self::getSession($c),
         ));
@@ -67,10 +67,10 @@ final class AuthServiceProvider implements ServiceProviderInterface
         return $auth;
     }
 
-    private static function getSession(ContainerInterface $container): SessionService
+    private static function getSession(ContainerInterface $container): SessionServiceInterface
     {
-        $session = $container->get(SessionService::class);
-        assert($session instanceof SessionService);
+        $session = $container->get(SessionServiceInterface::class);
+        assert($session instanceof SessionServiceInterface);
 
         return $session;
     }
