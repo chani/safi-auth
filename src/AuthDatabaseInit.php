@@ -28,7 +28,6 @@ final readonly class AuthDatabaseInit
         // 2. Ensure default admin exists
         $existingAdmin = $this->db->findOneModel(User::class, 'email = ? OR role = ?', ['admin', 'admin']);
         if (!$existingAdmin instanceof User) {
-            /** @var User $admin */
             $admin = $this->db->dispenseModel(User::class);
             $admin->email = 'admin';
             $admin->password = password_hash('admin', PASSWORD_DEFAULT);
