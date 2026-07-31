@@ -17,7 +17,6 @@ use Safi\Extensions\Auth\AuthDatabaseInit;
 
 final readonly class AuthInitCommand implements CommandInterface
 {
-    // Pure DI: Injektion der Schnittstelle über den Konstruktor
     public function __construct(private DatabaseDriverInterface $db) {}
 
     #[\Override]
@@ -29,7 +28,7 @@ final readonly class AuthInitCommand implements CommandInterface
     #[\Override]
     public function getDescription(): string
     {
-        return 'Initializes authentication database schema and seeds default admin user.';
+        return 'Creates authentication database tables and default admin record.';
     }
 
     #[\Override]
@@ -43,7 +42,7 @@ final readonly class AuthInitCommand implements CommandInterface
     {
         $init = new AuthDatabaseInit($this->db);
         $init->initializeSchema();
-        echo "Authentication schema initialized and default admin seeded.\n";
+        echo "Database schema initialized.\n";
         return 0;
     }
 }
