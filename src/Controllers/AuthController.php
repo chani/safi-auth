@@ -36,7 +36,7 @@ final class AuthController extends AbstractController
     public function showLogin(): Response
     {
         if ($this->authService->isAuthenticated()) {
-            return $this->redirect('/hello');
+            return $this->redirect('/admin');
         }
 
         return $this->render('@Auth/login.twig', [
@@ -53,7 +53,7 @@ final class AuthController extends AbstractController
         $password = $this->request->post('password');
 
         if (is_string($username) && is_string($password) && $this->authService->loginWithCredentials($username, $password)) {
-            return $this->redirect('/hello');
+            return $this->redirect('/admin');
         }
 
         return $this->render('@Auth/login.twig', [
