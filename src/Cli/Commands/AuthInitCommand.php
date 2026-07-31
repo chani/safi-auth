@@ -17,6 +17,7 @@ use Safi\Extensions\Auth\AuthDatabaseInit;
 
 final readonly class AuthInitCommand implements CommandInterface
 {
+    // Pure DI: Injektion der Schnittstelle über den Konstruktor
     public function __construct(private DatabaseDriverInterface $db) {}
 
     #[\Override]
