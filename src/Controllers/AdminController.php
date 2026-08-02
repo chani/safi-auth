@@ -45,7 +45,7 @@ final class AdminController extends AbstractController
         $this->enforceAdminRole();
         $users = $this->db->findModels(User::class, 'ORDER BY id ASC');
 
-        return $this->render('@Auth/users.twig', [
+        return $this->render('@Auth/users', [
             'title' => 'User Directory Management',
             'users' => $users,
         ]);
@@ -106,7 +106,7 @@ final class AdminController extends AbstractController
         $activeSessions = $this->db->findModels(UserSession::class, 'ORDER BY last_active DESC');
         $lockedIps = $this->db->findModels(LockedIp::class, 'ORDER BY id DESC');
 
-        return $this->render('@Auth/sessions.twig', [
+        return $this->render('@Auth/sessions', [
             'title' => 'Security & Session Management',
             'activeSessions' => $activeSessions,
             'lockedIps' => $lockedIps,

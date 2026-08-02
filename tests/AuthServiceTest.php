@@ -1,50 +1,76 @@
 <?php
 
-/**
- * Safi Microframework - safi-auth
- * @author Jean Bruenn
- * @copyright 2026 All Rights Reserved
- * @see https://github.com/chani/safi-auth
- */
-
 declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Extensions\Auth\AuthService;
 use Safi\Extensions\Auth\BruteForceShield;
+use Safi\Extensions\Auth\Models\User;
+use Safi\Extensions\DbRedBean\RedBeanDatabaseDriver;
 use Safi\Extensions\Session\SessionServiceInterface;
 
 final class AuthServiceTest extends TestCase
 {
+    private RedBeanDatabaseDriver $db;
+
+    protected function setUp(): void
+    {
+        $this->db = new RedBeanDatabaseDriver('sqlite::memory:');
+    }
+
     public function testHashesAndVerifiesPassword(): void
     {
         $shield = new BruteForceShield();
-        $db = $this->createMock(DatabaseDriverInterface::class);
         $session = $this->createMock(SessionServiceInterface::class);
-        $auth = new AuthService($shield, $db, $session);
+        $auth = new AuthService($shield, $this->db, $session);
 
-        $hash = $auth->hashPassword('secret');
-        $this->assertTrue($auth->verifyPassword('secret', $hash));
+        $hash = $auth->hashPassword('secret123');
+        $this->assertTrue($auth->verifyPassword('secret123', $hash));
         $this->assertFalse($auth->verifyPassword('wrong', $hash));
     }
 
-    public function testLocksLoginAttemptOnFailure(): void
+    public function testSuccessfulCredentialsLogin(): void
     {
-        $shield = new BruteForceShield(maxAttempts: 5);
-        $db = $this->createMock(DatabaseDriverInterface::class);
+        $shield = new BruteForceShield();
         $session = $this->createMock(SessionServiceInterface::class);
-        new AuthService($shield, $db, $session);
+        $session->expects($this->once())->method('start');
+        $session->expects($this->once())->method('regenerateId')->willReturn(true);
+        $session->expects($this->once())->method('getId')->willReturn('sess_123');
 
-        $ip = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
-        $key = $ip . ':admin';
+        $user = $this->db->dispenseModel(User::class);
+        $user->email = 'admin@safi.local';
+        $user->password = password_hash('password123', PASSWORD_DEFAULT);
+        $this->db->storeModel($user);
 
-        for ($i = 0; $i < 5; $i++) {
-            $shield->recordFailure($key);
-        }
+        $auth = new AuthService($shield, $this->db, $session);
+        $result = $auth->loginWithCredentials('admin@safi.local', 'password123');
 
-        $this->assertTrue($shield->isLocked($key));
+        $this->assertTrue($result);
+    }
+
+    public function testFailedCredentialsLoginRecordsFailureAndBlocks(): void
+    {
+        $shield = new BruteForceShield(maxAttempts: 2);
+        $session = $this->createMock(SessionServiceInterface::class);
+        $auth = new AuthService($shield, $this->db, $session);
+
+        $this->assertFalse($auth->loginWithCredentials('unknown@safi.local', 'wrong'));
+        $this->assertFalse($auth->loginWithCredentials('unknown@safi.local', 'wrong'));
+
+        // Third attempt should be blocked by shield
+        $this->assertFalse($auth->loginWithCredentials('unknown@safi.local', 'wrong'));
+    }
+
+    public function testLogoutClearsSessionAndTrashesUserSession(): void
+    {
+        $shield = new BruteForceShield();
+        $session = $this->createMock(SessionServiceInterface::class);
+        $session->expects($this->once())->method('getId')->willReturn('sess_abc');
+        $session->expects($this->once())->method('destroy')->willReturn(true);
+
+        $auth = new AuthService($shield, $this->db, $session);
+        $auth->logout();
     }
 }

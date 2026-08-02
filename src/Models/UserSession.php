@@ -1,19 +1,12 @@
 <?php
 
-/**
- * Safi Microframework - safi-auth
- * @author Jean Bruenn
- * @copyright 2026 All Rights Reserved
- * @see https://github.com/chani/safi-auth
- */
-
 declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Models;
 
-use Safi\Extensions\DbRedBean\AbstractModel;
+use Safi\Extensions\DbRedBean\RedBeanModel;
 
-final class UserSession extends AbstractModel
+final class UserSession extends RedBeanModel
 {
     public string $sessionId {
         get {
