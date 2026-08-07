@@ -1,32 +1,41 @@
 {
-    "name": "chani/safi-auth",
-    "type": "library",
-    "description": "Auth Extension for Safi Microframework",
-    "license": "proprietary",
-    "repositories": [
-        { "type": "path", "url": "../safi-core" },
-        { "type": "path", "url": "../safi-db-redbean" },
-        { "type": "path", "url": "../safi-session" }
-    ],
-    "require": {
-        "php": "^8.5",
-        "chani/safi-core": "^0.1.0",
-        "chani/safi-db-redbean": "^0.1.0",
-        "chani/safi-session": "^0.1.0"
+  "name": "chani/safi-auth",
+  "type": "library",
+  "description": "Auth Extension for Safi Microframework",
+  "license": "MIT",
+  "require": {
+    "php": "^8.5",
+    "chani/safi-core": "^0.1.18",
+    "chani/safi-db-redbean": "^0.1.11",
+    "chani/safi-session": "^0.1.5",
+    "psr/simple-cache": "^3.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Safi\\Extensions\\Auth\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Safi\\Extensions\\Auth\\Tests\\": "tests/"
+    }
+  },
+  "repositories": [
+    {
+      "type": "path",
+      "url": "../safi-*"
     },
-    "require-dev": {
-        "friendsofphp/php-cs-fixer": "^3.64",
-        "phpstan/phpstan": "^2.0",
-        "phpunit/phpunit": "^11.0",
-        "rector/rector": "^2.0",
-        "vimeo/psalm": "^6.0"
-    },
-    "autoload": {
-        "psr-4": { "Safi\\Extensions\\Auth\\": "src/" }
-    },
-    "autoload-dev": {
-        "psr-4": { "Safi\\Extensions\\Auth\\Tests\\": "tests/" }
-    },
-    "minimum-stability": "dev",
-    "prefer-stable": true
+    {
+      "type": "path",
+      "url": "../wajha-router"
+    }
+  ],
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "extra": {
+    "branch-alias": {
+      "dev-main": "0.1.x-dev",
+      "dev-master": "0.1.x-dev"
+    }
+  }
 }
