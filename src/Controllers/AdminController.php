@@ -1,12 +1,5 @@
 <?php
 
-/**
- * Safi Microframework - safi-auth
- * @author Jean Bruenn
- * @copyright 2026 All Rights Reserved
- * @see https://github.com/chani/safi-auth
- */
-
 declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Controllers;
@@ -14,12 +7,12 @@ namespace Safi\Extensions\Auth\Controllers;
 use Safi\Core\AbstractController;
 use Safi\Core\Attributes\Route;
 use Safi\Core\Contracts\DatabaseDriverInterface;
+use Safi\Core\Contracts\SecurityServiceInterface;
 use Safi\Core\Contracts\ViewEngineInterface;
 use Safi\Core\Exception\ForbiddenException;
 use Safi\Core\Exception\ValidationException;
 use Safi\Core\Http\Request;
 use Safi\Core\Http\Response;
-use Safi\Core\Services\SecurityService;
 use Safi\Extensions\Auth\AuthService;
 use Safi\Extensions\Auth\Models\LockedIp;
 use Safi\Extensions\Auth\Models\User;
@@ -31,7 +24,7 @@ final class AdminController extends AbstractController
     public function __construct(
         ViewEngineInterface $view,
         Request $request,
-        SecurityService $security,
+        SecurityServiceInterface $security,
         DatabaseDriverInterface $db,
         private readonly AuthService $authService,
         private readonly SessionServiceInterface $session,
@@ -39,7 +32,7 @@ final class AdminController extends AbstractController
         parent::__construct($view, $request, $security, $db);
     }
 
-    #[Route('/admin/users', method: 'GET')]
+    #[Route('/admin/users', method: 'GET', name: 'admin.users.index')]
     public function userList(): Response
     {
         $this->enforceAdminRole();
@@ -51,7 +44,7 @@ final class AdminController extends AbstractController
         ]);
     }
 
-    #[Route('/admin/users/save', method: 'POST')]
+    #[Route('/admin/users/save', method: 'POST', name: 'admin.users.save')]
     public function saveUser(): Response
     {
         $this->enforceAdminRole();
@@ -63,7 +56,11 @@ final class AdminController extends AbstractController
             throw new ValidationException('A valid email address is required.');
         }
 
-        if (is_string($password) && trim($password) !== '') {
+        if (!is_string($password) || mb_strlen(trim($password)) < 8) {
+            throw new ValidationException('Password must be at least 8 characters long.');
+        }
+
+        $this->db->transaction(function () use ($email, $password): void {
             $user = $this->db->dispenseModel(User::class);
             $user->email = $email;
             $user->password = $this->authService->hashPassword($password);
@@ -71,12 +68,12 @@ final class AdminController extends AbstractController
             $user->createdAt = date('Y-m-d H:i:s');
 
             $this->db->storeModel($user);
-        }
+        });
 
         return $this->redirect('/admin/users');
     }
 
-    #[Route('/admin/users/delete', method: 'POST')]
+    #[Route('/admin/users/delete', method: 'POST', name: 'admin.users.delete')]
     public function deleteUser(): Response
     {
         $this->enforceAdminRole();
@@ -89,17 +86,19 @@ final class AdminController extends AbstractController
             $currentUserId = is_numeric($rawCurrentUserId) ? (int) $rawCurrentUserId : 0;
 
             if ($userId !== $currentUserId) {
-                $user = $this->db->loadModel(User::class, $userId);
-                if ($user->getId() > 0) {
-                    $this->db->trashModel($user);
-                }
+                $this->db->transaction(function () use ($userId): void {
+                    $user = $this->db->loadModel(User::class, $userId);
+                    if ($user->getId() > 0) {
+                        $this->db->trashModel($user);
+                    }
+                });
             }
         }
 
         return $this->redirect('/admin/users');
     }
 
-    #[Route('/admin/sessions', method: 'GET')]
+    #[Route('/admin/sessions', method: 'GET', name: 'admin.sessions.index')]
     public function sessions(): Response
     {
         $this->enforceAdminRole();
@@ -113,7 +112,7 @@ final class AdminController extends AbstractController
         ]);
     }
 
-    #[Route('/admin/sessions/unlock', method: 'POST')]
+    #[Route('/admin/sessions/unlock', method: 'POST', name: 'admin.sessions.unlock')]
     public function unlockIp(): Response
     {
         $this->enforceAdminRole();
@@ -139,7 +138,7 @@ final class AdminController extends AbstractController
             throw new ForbiddenException('Access denied: Authentication required.');
         }
 
-        $user = $this->db->loadModel(User::class, $currentUserId);
+        $user = $this->findModelOrFail(User::class, $currentUserId);
         if ($user->role !== 'admin') {
             throw new ForbiddenException('Access denied: Administrative privileges required.');
         }
