@@ -46,6 +46,13 @@ final class AuthController extends AbstractController
         $password = $this->request->post('password');
 
         if (is_string($username) && is_string($password) && $this->authService->loginWithCredentials($username, $password)) {
+            if ($this->request->isXhr()) {
+                return new Response('Redirecting...', 200, [
+                    'HX-Redirect' => '/admin',
+                    'Location' => '/admin',
+                ]);
+            }
+
             return $this->redirect('/admin');
         }
 
@@ -60,6 +67,14 @@ final class AuthController extends AbstractController
     {
         $this->validateCsrf();
         $this->authService->logout();
+
+        if ($this->request->isXhr()) {
+            return new Response('Redirecting...', 200, [
+                'HX-Redirect' => '/login',
+                'Location' => '/login',
+            ]);
+        }
+
         return $this->redirect('/login');
     }
 }
