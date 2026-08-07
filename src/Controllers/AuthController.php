@@ -1,12 +1,5 @@
 <?php
 
-/**
- * Safi Microframework - safi-auth
- * @author Jean Bruenn
- * @copyright 2026 All Rights Reserved
- * @see https://github.com/chani/safi-auth
- */
-
 declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Controllers;
@@ -14,10 +7,10 @@ namespace Safi\Extensions\Auth\Controllers;
 use Safi\Core\AbstractController;
 use Safi\Core\Attributes\Route;
 use Safi\Core\Contracts\DatabaseDriverInterface;
+use Safi\Core\Contracts\SecurityServiceInterface;
 use Safi\Core\Contracts\ViewEngineInterface;
 use Safi\Core\Http\Request;
 use Safi\Core\Http\Response;
-use Safi\Core\Services\SecurityService;
 use Safi\Extensions\Auth\AuthService;
 
 final class AuthController extends AbstractController
@@ -25,14 +18,14 @@ final class AuthController extends AbstractController
     public function __construct(
         ViewEngineInterface $view,
         Request $request,
-        SecurityService $security,
+        SecurityServiceInterface $security,
         DatabaseDriverInterface $db,
         private readonly AuthService $authService,
     ) {
         parent::__construct($view, $request, $security, $db);
     }
 
-    #[Route('/login', method: 'GET', public: true)]
+    #[Route('/login', method: 'GET', name: 'auth.login.show', public: true)]
     public function showLogin(): Response
     {
         if ($this->authService->isAuthenticated()) {
@@ -44,7 +37,7 @@ final class AuthController extends AbstractController
         ]);
     }
 
-    #[Route('/login', method: 'POST', public: true)]
+    #[Route('/login', method: 'POST', name: 'auth.login', public: true)]
     public function login(): Response
     {
         $this->validateCsrf();
@@ -62,9 +55,10 @@ final class AuthController extends AbstractController
         ]);
     }
 
-    #[Route('/logout', method: 'GET', public: true)]
+    #[Route('/logout', method: 'POST', name: 'auth.logout', public: false)]
     public function logout(): Response
     {
+        $this->validateCsrf();
         $this->authService->logout();
         return $this->redirect('/login');
     }
