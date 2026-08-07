@@ -1,6 +1,15 @@
 parameters:
     level: max
+    tmpDir: .phpstan.cache
     paths:
         - src
+    excludePaths:
+        analyseAndScan:
+            - '*/vendor/*'
+            - '*/data/*'
+            - '*/cache/*'
+            - '*/var/*'
+            - '*/storage/*'
+            - '*.cache'
     treatPhpDocTypesAsCertain: false
     reportUnmatchedIgnoredErrors: false
