@@ -1,12 +1,5 @@
 <?php
 
-/**
- * Safi Microframework - safi-auth
- * @author Jean Bruenn
- * @copyright 2026 All Rights Reserved
- * @see https://github.com/chani/safi-auth
- */
-
 declare(strict_types=1);
 
 namespace Safi\Extensions\Auth;
@@ -15,7 +8,9 @@ use Psr\Container\ContainerInterface;
 use Psr\SimpleCache\CacheInterface;
 use Safi\Core\Contracts\ContainerRegistrarInterface;
 use Safi\Core\Contracts\DatabaseDriverInterface;
+use Safi\Core\Contracts\SecurityServiceInterface;
 use Safi\Core\Contracts\ServiceProviderInterface;
+use Safi\Extensions\Auth\Cli\Commands\AuthInitCommand;
 use Safi\Extensions\Session\SessionServiceInterface;
 
 final class AuthServiceProvider implements ServiceProviderInterface
@@ -28,50 +23,42 @@ final class AuthServiceProvider implements ServiceProviderInterface
             return new BruteForceShield($cache instanceof CacheInterface ? $cache : null);
         });
 
-        $registrar->set(AuthService::class, static fn(ContainerInterface $c): AuthService => new AuthService(
-            self::getShield($c),
-            self::getDb($c),
-            self::getSession($c),
-        ));
+        $registrar->set(AuthDatabaseInit::class, static function (ContainerInterface $c): AuthDatabaseInit {
+            $db = $c->get(DatabaseDriverInterface::class);
+            assert($db instanceof DatabaseDriverInterface);
+            return new AuthDatabaseInit($db);
+        });
 
-        $registrar->set(AuthMiddleware::class, static fn(ContainerInterface $c): AuthMiddleware => new AuthMiddleware(
-            self::getAuth($c),
-            self::getSession($c),
-        ));
+        $registrar->set(AuthInitCommand::class, static function (ContainerInterface $c): AuthInitCommand {
+            $init = $c->get(AuthDatabaseInit::class);
+            assert($init instanceof AuthDatabaseInit);
+            return new AuthInitCommand($init);
+        });
+
+        $registrar->set(AuthService::class, static function (ContainerInterface $c): AuthService {
+            $shield = $c->get(BruteForceShield::class);
+            assert($shield instanceof BruteForceShield);
+
+            $db = $c->get(DatabaseDriverInterface::class);
+            assert($db instanceof DatabaseDriverInterface);
+
+            $session = $c->get(SessionServiceInterface::class);
+            assert($session instanceof SessionServiceInterface);
+
+            $security = $c->get(SecurityServiceInterface::class);
+            assert($security instanceof SecurityServiceInterface);
+
+            return new AuthService($shield, $db, $session, $security);
+        });
+
+        $registrar->set(AuthMiddleware::class, static function (ContainerInterface $c): AuthMiddleware {
+            $auth = $c->get(AuthService::class);
+            assert($auth instanceof AuthService);
+
+            return new AuthMiddleware($auth);
+        });
     }
 
     #[\Override]
     public function boot(ContainerInterface $container): void {}
-
-    private static function getShield(ContainerInterface $container): BruteForceShield
-    {
-        $shield = $container->get(BruteForceShield::class);
-        assert($shield instanceof BruteForceShield);
-
-        return $shield;
-    }
-
-    private static function getDb(ContainerInterface $container): DatabaseDriverInterface
-    {
-        $db = $container->get(DatabaseDriverInterface::class);
-        assert($db instanceof DatabaseDriverInterface);
-
-        return $db;
-    }
-
-    private static function getAuth(ContainerInterface $container): AuthService
-    {
-        $auth = $container->get(AuthService::class);
-        assert($auth instanceof AuthService);
-
-        return $auth;
-    }
-
-    private static function getSession(ContainerInterface $container): SessionServiceInterface
-    {
-        $session = $container->get(SessionServiceInterface::class);
-        assert($session instanceof SessionServiceInterface);
-
-        return $session;
-    }
 }
