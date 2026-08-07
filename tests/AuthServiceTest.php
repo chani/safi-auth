@@ -24,8 +24,8 @@ final class AuthServiceTest extends TestCase
     public function testHashesAndVerifiesPassword(): void
     {
         $shield = new BruteForceShield();
-        $session = $this->createMock(SessionServiceInterface::class);
-        $security = $this->createMock(SecurityServiceInterface::class);
+        $session = $this->createStub(SessionServiceInterface::class);
+        $security = $this->createStub(SecurityServiceInterface::class);
         $auth = new AuthService($shield, $this->db, $session, $security);
 
         $hash = $auth->hashPassword('secret123');
@@ -41,7 +41,7 @@ final class AuthServiceTest extends TestCase
         $session->expects($this->once())->method('regenerateId')->willReturn(true);
         $session->expects($this->once())->method('getId')->willReturn('sess_123');
 
-        $security = $this->createMock(SecurityServiceInterface::class);
+        $security = $this->createStub(SecurityServiceInterface::class);
         $security->method('getClientIp')->willReturn('127.0.0.1');
         $security->method('getUserAgent')->willReturn('PHPUnit');
 
@@ -59,8 +59,8 @@ final class AuthServiceTest extends TestCase
     public function testFailedCredentialsLoginRecordsFailureAndBlocks(): void
     {
         $shield = new BruteForceShield(maxAttempts: 2);
-        $session = $this->createMock(SessionServiceInterface::class);
-        $security = $this->createMock(SecurityServiceInterface::class);
+        $session = $this->createStub(SessionServiceInterface::class);
+        $security = $this->createStub(SecurityServiceInterface::class);
         $security->method('getClientIp')->willReturn('127.0.0.1');
         $security->method('getUserAgent')->willReturn('PHPUnit');
 
@@ -79,7 +79,7 @@ final class AuthServiceTest extends TestCase
         $session = $this->createMock(SessionServiceInterface::class);
         $session->expects($this->once())->method('getId')->willReturn('sess_abc');
         $session->expects($this->once())->method('destroy')->willReturn(true);
-        $security = $this->createMock(SecurityServiceInterface::class);
+        $security = $this->createStub(SecurityServiceInterface::class);
 
         $auth = new AuthService($shield, $this->db, $session, $security);
         $auth->logout();

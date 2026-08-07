@@ -21,9 +21,9 @@ final class AuthMiddlewareTest extends TestCase
 {
     public function testPassesPublicRoutesUnauthenticated(): void
     {
-        $session = $this->createMock(SessionServiceInterface::class);
-        $db = $this->createMock(DatabaseDriverInterface::class);
-        $security = $this->createMock(SecurityServiceInterface::class);
+        $session = $this->createStub(SessionServiceInterface::class);
+        $db = $this->createStub(DatabaseDriverInterface::class);
+        $security = $this->createStub(SecurityServiceInterface::class);
         $auth = new AuthService(new BruteForceShield(), $db, $session, $security);
         $middleware = new AuthMiddleware($auth);
 
@@ -31,7 +31,7 @@ final class AuthMiddlewareTest extends TestCase
         $request->setAttribute('route_handler', ['AuthController', 'showLogin']);
         $request->setAttribute('route_options', ['public' => true]);
         $response = new Response();
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = $this->createStub(LoggerInterface::class);
 
         $context = new Context($request, $response, $logger);
 
@@ -46,9 +46,9 @@ final class AuthMiddlewareTest extends TestCase
 
     public function testRedirectsUnauthenticatedUserOnProtectedPath(): void
     {
-        $session = $this->createMock(SessionServiceInterface::class);
-        $db = $this->createMock(DatabaseDriverInterface::class);
-        $security = $this->createMock(SecurityServiceInterface::class);
+        $session = $this->createStub(SessionServiceInterface::class);
+        $db = $this->createStub(DatabaseDriverInterface::class);
+        $security = $this->createStub(SecurityServiceInterface::class);
         $auth = new AuthService(new BruteForceShield(), $db, $session, $security);
         $middleware = new AuthMiddleware($auth);
 
@@ -56,7 +56,7 @@ final class AuthMiddlewareTest extends TestCase
         $request->setAttribute('route_handler', ['AdminController', 'dashboard']);
         $request->setAttribute('route_options', ['public' => false]);
         $response = new Response();
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = $this->createStub(LoggerInterface::class);
 
         $context = new Context($request, $response, $logger);
 
@@ -70,9 +70,9 @@ final class AuthMiddlewareTest extends TestCase
 
     public function testReturns401OnXhrRequest(): void
     {
-        $session = $this->createMock(SessionServiceInterface::class);
-        $db = $this->createMock(DatabaseDriverInterface::class);
-        $security = $this->createMock(SecurityServiceInterface::class);
+        $session = $this->createStub(SessionServiceInterface::class);
+        $db = $this->createStub(DatabaseDriverInterface::class);
+        $security = $this->createStub(SecurityServiceInterface::class);
         $auth = new AuthService(new BruteForceShield(), $db, $session, $security);
         $middleware = new AuthMiddleware($auth);
 
@@ -84,7 +84,7 @@ final class AuthMiddlewareTest extends TestCase
         $request->setAttribute('route_handler', ['AdminController', 'dashboard']);
         $request->setAttribute('route_options', ['public' => false]);
         $response = new Response();
-        $logger = $this->createMock(LoggerInterface::class);
+        $logger = $this->createStub(LoggerInterface::class);
 
         $context = new Context($request, $response, $logger);
 
