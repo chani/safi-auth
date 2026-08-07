@@ -7,6 +7,7 @@ namespace Safi\Extensions\Auth\Tests;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Safi\Core\Contracts\DatabaseDriverInterface;
+use Safi\Core\Contracts\SecurityServiceInterface;
 use Safi\Core\Http\Context;
 use Safi\Core\Http\Request;
 use Safi\Core\Http\RequestHandlerInterface;
@@ -22,11 +23,13 @@ final class AuthMiddlewareTest extends TestCase
     {
         $session = $this->createMock(SessionServiceInterface::class);
         $db = $this->createMock(DatabaseDriverInterface::class);
-        $auth = new AuthService(new BruteForceShield(), $db, $session);
-        $middleware = new AuthMiddleware($auth, $session);
+        $security = $this->createMock(SecurityServiceInterface::class);
+        $auth = new AuthService(new BruteForceShield(), $db, $session, $security);
+        $middleware = new AuthMiddleware($auth);
 
         $request = new Request(server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/login']);
         $request->setAttribute('route_handler', ['AuthController', 'showLogin']);
+        $request->setAttribute('route_options', ['public' => true]);
         $response = new Response();
         $logger = $this->createMock(LoggerInterface::class);
 
@@ -45,11 +48,13 @@ final class AuthMiddlewareTest extends TestCase
     {
         $session = $this->createMock(SessionServiceInterface::class);
         $db = $this->createMock(DatabaseDriverInterface::class);
-        $auth = new AuthService(new BruteForceShield(), $db, $session);
-        $middleware = new AuthMiddleware($auth, $session);
+        $security = $this->createMock(SecurityServiceInterface::class);
+        $auth = new AuthService(new BruteForceShield(), $db, $session, $security);
+        $middleware = new AuthMiddleware($auth);
 
         $request = new Request(server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/admin/dashboard']);
         $request->setAttribute('route_handler', ['AdminController', 'dashboard']);
+        $request->setAttribute('route_options', ['public' => false]);
         $response = new Response();
         $logger = $this->createMock(LoggerInterface::class);
 
@@ -61,5 +66,35 @@ final class AuthMiddlewareTest extends TestCase
         $res = $middleware->process($context, $handler);
 
         $this->assertSame(302, $res->getStatusCode());
+    }
+
+    public function testReturns401OnXhrRequest(): void
+    {
+        $session = $this->createMock(SessionServiceInterface::class);
+        $db = $this->createMock(DatabaseDriverInterface::class);
+        $security = $this->createMock(SecurityServiceInterface::class);
+        $auth = new AuthService(new BruteForceShield(), $db, $session, $security);
+        $middleware = new AuthMiddleware($auth);
+
+        $request = new Request(server: [
+            'REQUEST_METHOD' => 'GET',
+            'REQUEST_URI' => '/admin/dashboard',
+            'HTTP_X_REQUESTED_WITH' => 'xmlhttprequest',
+        ]);
+        $request->setAttribute('route_handler', ['AdminController', 'dashboard']);
+        $request->setAttribute('route_options', ['public' => false]);
+        $response = new Response();
+        $logger = $this->createMock(LoggerInterface::class);
+
+        $context = new Context($request, $response, $logger);
+
+        $handler = $this->createMock(RequestHandlerInterface::class);
+        $handler->expects($this->never())->method('handle');
+
+        $res = $middleware->process($context, $handler);
+
+        $this->assertSame(401, $res->getStatusCode());
+        $this->assertArrayHasKey('HX-Redirect', $res->getHeaders());
+        $this->assertSame('/login', $res->getHeaders()['HX-Redirect']);
     }
 }
