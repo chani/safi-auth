@@ -1,0 +1,37 @@
+pre-commit:
+  piped: true
+
+  commands:
+    00-php-lint:
+      glob: "*.php"
+      run: for file in {staged_files}; do php -l "$file" || exit 1; done
+
+    01-eslint-fix:
+      glob: "*.js"
+      run: eslint --fix {staged_files} && git add {staged_files}
+
+    02-php-cs-fixer:
+      glob: "*.php"
+      run: php-cs-fixer fix --config=.php-cs-fixer.dist.php --path-mode=intersection {staged_files} && git add {staged_files}
+
+    03-twig-cs-fixer:
+      glob: "*.twig"
+      run: twig-cs-fixer lint {staged_files} --fix && git add {staged_files}
+
+    04-prettier:
+      glob: "*.{js,html,css,scss,json,yml,yaml,md}"
+      run: prettier --write {staged_files} && git add {staged_files}
+
+    05-phpstan:
+      glob: "*.php"
+      run: phpstan analyse
+
+    06-psalm:
+      glob: "*.php"
+      run: psalm
+
+pre-push:
+  commands:
+    01-phpunit:
+      all_files: true
+      run: phpunit
