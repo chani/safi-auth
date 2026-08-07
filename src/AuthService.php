@@ -40,11 +40,16 @@ final readonly class AuthService
         $ip = $this->resolveClientIp();
         $shieldKey = $ip . ':' . $username;
 
-        if ($this->shield->isLocked($shieldKey)) {
+        if ($this->shield->isLocked($ip) || $this->shield->isLocked($shieldKey)) {
             return false;
         }
 
-        $user = $this->db->findOneModel(User::class, 'email = ?', [$username]);
+        $lockedIp = $this->db->findOneModel(LockedIp::class, 'ip = ? AND locked_until > ?', [$ip, date('Y-m-d H:i:s')]);
+        if ($lockedIp instanceof LockedIp) {
+            return false;
+        }
+
+        $user = $this->db->findOneModel(User::class, 'email = ? OR email = ?', [$username, strtolower(trim($username))]);
         if (!$user instanceof User) {
             $this->recordFailureAndAudit($username, $ip, $shieldKey);
             return false;
@@ -52,12 +57,37 @@ final readonly class AuthService
 
         if (password_verify($password, $user->password)) {
             $this->shield->reset($shieldKey);
+            $this->shield->reset($ip);
             $this->login($user->getId(), $user->email);
             return true;
         }
 
         $this->recordFailureAndAudit($username, $ip, $shieldKey);
         return false;
+    }
+
+    private function recordFailureAndAudit(string $username, string $ip, string $shieldKey): void
+    {
+        $this->shield->recordFailure($shieldKey);
+        $this->shield->recordFailure($ip);
+
+        $this->db->transaction(function () use ($username, $ip, $shieldKey): void {
+            $attempt = $this->db->dispenseModel(LoginAttempt::class);
+            $attempt->ip = $ip;
+            $attempt->username = $username;
+            $attempt->attemptedAt = date('Y-m-d H:i:s');
+            $this->db->storeModel($attempt);
+
+            if ($this->shield->isLocked($shieldKey) || $this->shield->isLocked($ip)) {
+                $lockedIp = $this->db->findOneModel(LockedIp::class, 'ip = ?', [$ip]);
+                if (!$lockedIp instanceof LockedIp) {
+                    $lockedIp = $this->db->dispenseModel(LockedIp::class);
+                    $lockedIp->ip = $ip;
+                }
+                $lockedIp->lockedUntil = date('Y-m-d H:i:s', time() + 300);
+                $this->db->storeModel($lockedIp);
+            }
+        });
     }
 
     public function login(int $userId, string $username = 'admin'): void
@@ -96,17 +126,29 @@ final readonly class AuthService
         if (!$this->session->has(self::SESSION_USER_KEY)) {
             return false;
         }
+
         $currentAgent = $this->resolveUserAgent();
         $expectedHash = $this->session->get(self::SESSION_FINGERPRINT_KEY);
         if (!is_string($expectedHash) || !hash_equals($expectedHash, hash('sha256', $currentAgent))) {
             $this->logout();
             return false;
         }
+
+        $sessId = $this->session->getId();
+        if ($sessId !== '') {
+            $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
+            if (!$userSession instanceof UserSession) {
+                $this->logout();
+                return false;
+            }
+        }
+
         $rawUserId = $this->session->get(self::SESSION_USER_KEY, 0);
         $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
         $rawUsername = $this->session->get(self::SESSION_USERNAME_KEY, 'admin');
         $username = is_string($rawUsername) ? $rawUsername : 'admin';
-        $this->syncUserSessionToDb($this->session->getId(), $userId, $username);
+
+        $this->syncUserSessionToDb($sessId, $userId, $username);
         return true;
     }
 
@@ -173,26 +215,4 @@ final readonly class AuthService
         });
     }
 
-    private function recordFailureAndAudit(string $username, string $ip, string $shieldKey): void
-    {
-        $this->shield->recordFailure($shieldKey);
-
-        $this->db->transaction(function () use ($username, $ip, $shieldKey): void {
-            $attempt = $this->db->dispenseModel(LoginAttempt::class);
-            $attempt->ip = $ip;
-            $attempt->username = $username;
-            $attempt->attemptedAt = date('Y-m-d H:i:s');
-            $this->db->storeModel($attempt);
-
-            if ($this->shield->isLocked($shieldKey)) {
-                $lockedIp = $this->db->findOneModel(LockedIp::class, 'ip = ?', [$ip]);
-                if (!$lockedIp instanceof LockedIp) {
-                    $lockedIp = $this->db->dispenseModel(LockedIp::class);
-                    $lockedIp->ip = $ip;
-                }
-                $lockedIp->lockedUntil = date('Y-m-d H:i:s', time() + 300);
-                $this->db->storeModel($lockedIp);
-            }
-        });
-    }
 }
