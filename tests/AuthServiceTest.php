@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Safi\Extensions\Auth\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Safi\Core\Contracts\SecurityServiceInterface;
 use Safi\Extensions\Auth\AuthService;
 use Safi\Extensions\Auth\BruteForceShield;
 use Safi\Extensions\Auth\Models\User;
@@ -24,7 +25,8 @@ final class AuthServiceTest extends TestCase
     {
         $shield = new BruteForceShield();
         $session = $this->createMock(SessionServiceInterface::class);
-        $auth = new AuthService($shield, $this->db, $session);
+        $security = $this->createMock(SecurityServiceInterface::class);
+        $auth = new AuthService($shield, $this->db, $session, $security);
 
         $hash = $auth->hashPassword('secret123');
         $this->assertTrue($auth->verifyPassword('secret123', $hash));
@@ -39,12 +41,16 @@ final class AuthServiceTest extends TestCase
         $session->expects($this->once())->method('regenerateId')->willReturn(true);
         $session->expects($this->once())->method('getId')->willReturn('sess_123');
 
+        $security = $this->createMock(SecurityServiceInterface::class);
+        $security->method('getClientIp')->willReturn('127.0.0.1');
+        $security->method('getUserAgent')->willReturn('PHPUnit');
+
         $user = $this->db->dispenseModel(User::class);
         $user->email = 'admin@safi.local';
         $user->password = password_hash('password123', PASSWORD_DEFAULT);
         $this->db->storeModel($user);
 
-        $auth = new AuthService($shield, $this->db, $session);
+        $auth = new AuthService($shield, $this->db, $session, $security);
         $result = $auth->loginWithCredentials('admin@safi.local', 'password123');
 
         $this->assertTrue($result);
@@ -54,7 +60,11 @@ final class AuthServiceTest extends TestCase
     {
         $shield = new BruteForceShield(maxAttempts: 2);
         $session = $this->createMock(SessionServiceInterface::class);
-        $auth = new AuthService($shield, $this->db, $session);
+        $security = $this->createMock(SecurityServiceInterface::class);
+        $security->method('getClientIp')->willReturn('127.0.0.1');
+        $security->method('getUserAgent')->willReturn('PHPUnit');
+
+        $auth = new AuthService($shield, $this->db, $session, $security);
 
         $this->assertFalse($auth->loginWithCredentials('unknown@safi.local', 'wrong'));
         $this->assertFalse($auth->loginWithCredentials('unknown@safi.local', 'wrong'));
@@ -69,8 +79,9 @@ final class AuthServiceTest extends TestCase
         $session = $this->createMock(SessionServiceInterface::class);
         $session->expects($this->once())->method('getId')->willReturn('sess_abc');
         $session->expects($this->once())->method('destroy')->willReturn(true);
+        $security = $this->createMock(SecurityServiceInterface::class);
 
-        $auth = new AuthService($shield, $this->db, $session);
+        $auth = new AuthService($shield, $this->db, $session, $security);
         $auth->logout();
     }
 }
