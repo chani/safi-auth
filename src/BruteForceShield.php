@@ -1,12 +1,5 @@
 <?php
 
-/**
- * Safi Microframework - safi-auth
- * @author Jean Bruenn
- * @copyright 2026 All Rights Reserved
- * @see https://github.com/chani/safi-auth
- */
-
 declare(strict_types=1);
 
 namespace Safi\Extensions\Auth;
@@ -88,6 +81,6 @@ final class BruteForceShield
 
     private function getCacheKey(string $key): string
     {
-        return 'auth_shield:' . md5($key);
+        return 'auth_shield:' . hash('sha256', $key);
     }
 }
