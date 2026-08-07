@@ -80,10 +80,12 @@ final readonly class AuthService
         $sessId = $this->session->getId();
 
         if ($sessId !== '') {
-            $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
-            if ($userSession instanceof UserSession) {
-                $this->db->trashModel($userSession);
-            }
+            $this->db->transaction(function () use ($sessId): void {
+                $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
+                if ($userSession instanceof UserSession) {
+                    $this->db->trashModel($userSession);
+                }
+            });
         }
 
         $this->session->destroy();
@@ -120,21 +122,23 @@ final readonly class AuthService
 
     public function unlockIp(LockedIp $lockedIp): void
     {
-        $ip = $lockedIp->ip;
-        if ($ip !== '') {
-            $this->shield->reset($ip);
+        $this->db->transaction(function () use ($lockedIp): void {
+            $ip = $lockedIp->ip;
+            if ($ip !== '') {
+                $this->shield->reset($ip);
 
-            $attempts = $this->db->findModels(LoginAttempt::class, 'ip = ?', [$ip]);
-            foreach ($attempts as $attempt) {
-                if ($attempt instanceof LoginAttempt) {
-                    $this->shield->reset($ip . ':' . $attempt->username);
+                $attempts = $this->db->findModels(LoginAttempt::class, 'ip = ?', [$ip]);
+                foreach ($attempts as $attempt) {
+                    if ($attempt instanceof LoginAttempt) {
+                        $this->shield->reset($ip . ':' . $attempt->username);
+                    }
                 }
             }
-        }
 
-        if ($lockedIp->getId() > 0) {
-            $this->db->trashModel($lockedIp);
-        }
+            if ($lockedIp->getId() > 0) {
+                $this->db->trashModel($lockedIp);
+            }
+        });
     }
 
     private function resolveClientIp(): string
@@ -144,13 +148,7 @@ final readonly class AuthService
 
     private function resolveUserAgent(): string
     {
-        if (method_exists($this->security, 'getUserAgent')) {
-            /** @var mixed $agent */
-            $agent = $this->security->getUserAgent();
-            return is_string($agent) ? $agent : 'unknown';
-        }
-
-        return 'unknown';
+        return $this->security->getUserAgent();
     }
 
     private function syncUserSessionToDb(string $sessId, int $userId, string $username): void

@@ -13,7 +13,7 @@ use Safi\Core\Contracts\ServiceProviderInterface;
 use Safi\Extensions\Auth\Cli\Commands\AuthInitCommand;
 use Safi\Extensions\Session\SessionServiceInterface;
 
-final class AuthServiceProvider implements ServiceProviderInterface
+final readonly class AuthServiceProvider implements ServiceProviderInterface
 {
     #[\Override]
     public function register(ContainerRegistrarInterface $registrar): void
