@@ -6,9 +6,9 @@ Authentication, session management, and brute-force shielding extension for the 
 
 ## Features
 
-* **Session Security:** Session ID regeneration and User-Agent fingerprinting.
-* **Persistent Brute-Force Shield:** Cache-backed attempt tracking and rate limiting.
-* **Database Agnostic:** Interacts exclusively through `DatabaseDriverInterface`.
+- **Session Security:** Session ID regeneration and User-Agent fingerprinting.
+- **Persistent Brute-Force Shield:** Cache-backed attempt tracking and rate limiting.
+- **RedBean & Core Integration:** Leverages `DatabaseDriverInterface` with lightweight domain models.
 
 ---
 
