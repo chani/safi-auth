@@ -1,33 +1,28 @@
 <?php
 
-/**
- * Safi Microframework - safi-auth
- * @author Jean Bruenn
- * @copyright 2026 All Rights Reserved
- * @see https://github.com/chani/safi-auth
- */
-
 declare(strict_types=1);
 
 namespace Safi\Extensions\Auth;
 
 use Safi\Core\Contracts\DatabaseDriverInterface;
+use Safi\Core\Contracts\SecurityServiceInterface;
 use Safi\Extensions\Auth\Models\LockedIp;
 use Safi\Extensions\Auth\Models\LoginAttempt;
 use Safi\Extensions\Auth\Models\User;
 use Safi\Extensions\Auth\Models\UserSession;
 use Safi\Extensions\Session\SessionServiceInterface;
 
-final class AuthService
+final readonly class AuthService
 {
     private const string SESSION_USER_KEY = 'auth_user_id';
     private const string SESSION_USERNAME_KEY = 'auth_username';
     private const string SESSION_FINGERPRINT_KEY = 'auth_fingerprint';
 
     public function __construct(
-        private readonly BruteForceShield $shield,
-        private readonly DatabaseDriverInterface $db,
-        private readonly SessionServiceInterface $session,
+        private BruteForceShield $shield,
+        private DatabaseDriverInterface $db,
+        private SessionServiceInterface $session,
+        private SecurityServiceInterface $security,
     ) {}
 
     public function hashPassword(string $password): string
@@ -42,8 +37,7 @@ final class AuthService
 
     public function loginWithCredentials(string $username, string $password): bool
     {
-        $rawRemote = $_SERVER['REMOTE_ADDR'] ?? null;
-        $ip = is_string($rawRemote) ? $rawRemote : '127.0.0.1';
+        $ip = $this->resolveClientIp();
         $shieldKey = $ip . ':' . $username;
 
         if ($this->shield->isLocked($shieldKey)) {
@@ -75,8 +69,7 @@ final class AuthService
         $this->session->set(self::SESSION_USER_KEY, $userId);
         $this->session->set(self::SESSION_USERNAME_KEY, $username);
 
-        $rawAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
-        $userAgent = is_string($rawAgent) ? $rawAgent : 'unknown';
+        $userAgent = $this->resolveUserAgent();
         $this->session->set(self::SESSION_FINGERPRINT_KEY, hash('sha256', $userAgent));
 
         $this->syncUserSessionToDb($sessId, $userId, $username);
@@ -101,24 +94,17 @@ final class AuthService
         if (!$this->session->has(self::SESSION_USER_KEY)) {
             return false;
         }
-
-        $rawAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
-        $currentAgent = is_string($rawAgent) ? $rawAgent : 'unknown';
+        $currentAgent = $this->resolveUserAgent();
         $expectedHash = $this->session->get(self::SESSION_FINGERPRINT_KEY);
-
         if (!is_string($expectedHash) || !hash_equals($expectedHash, hash('sha256', $currentAgent))) {
             $this->logout();
             return false;
         }
-
         $rawUserId = $this->session->get(self::SESSION_USER_KEY, 0);
         $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
-
         $rawUsername = $this->session->get(self::SESSION_USERNAME_KEY, 'admin');
         $username = is_string($rawUsername) ? $rawUsername : 'admin';
-
         $this->syncUserSessionToDb($this->session->getId(), $userId, $username);
-
         return true;
     }
 
@@ -140,7 +126,9 @@ final class AuthService
 
             $attempts = $this->db->findModels(LoginAttempt::class, 'ip = ?', [$ip]);
             foreach ($attempts as $attempt) {
-                $this->shield->reset($ip . ':' . $attempt->username);
+                if ($attempt instanceof LoginAttempt) {
+                    $this->shield->reset($ip . ':' . $attempt->username);
+                }
             }
         }
 
@@ -149,15 +137,30 @@ final class AuthService
         }
     }
 
+    private function resolveClientIp(): string
+    {
+        return $this->security->getClientIp();
+    }
+
+    private function resolveUserAgent(): string
+    {
+        if (method_exists($this->security, 'getUserAgent')) {
+            /** @var mixed $agent */
+            $agent = $this->security->getUserAgent();
+            return is_string($agent) ? $agent : 'unknown';
+        }
+
+        return 'unknown';
+    }
+
     private function syncUserSessionToDb(string $sessId, int $userId, string $username): void
     {
         if ($sessId === '') {
             return;
         }
 
-        try {
-            $rawRemote = $_SERVER['REMOTE_ADDR'] ?? null;
-            $ip = is_string($rawRemote) ? $rawRemote : '127.0.0.1';
+        $this->db->transaction(function () use ($sessId, $userId, $username): void {
+            $ip = $this->resolveClientIp();
 
             $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
             if (!$userSession instanceof UserSession) {
@@ -169,15 +172,14 @@ final class AuthService
             $userSession->ipAddress = $ip;
             $userSession->lastActive = date('Y-m-d H:i:s');
             $this->db->storeModel($userSession);
-        } catch (\Throwable) {
-        }
+        });
     }
 
     private function recordFailureAndAudit(string $username, string $ip, string $shieldKey): void
     {
         $this->shield->recordFailure($shieldKey);
 
-        try {
+        $this->db->transaction(function () use ($username, $ip, $shieldKey): void {
             $attempt = $this->db->dispenseModel(LoginAttempt::class);
             $attempt->ip = $ip;
             $attempt->username = $username;
@@ -193,7 +195,6 @@ final class AuthService
                 $lockedIp->lockedUntil = date('Y-m-d H:i:s', time() + 300);
                 $this->db->storeModel($lockedIp);
             }
-        } catch (\Throwable) {
-        }
+        });
     }
 }
