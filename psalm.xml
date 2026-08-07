@@ -13,8 +13,11 @@
         </ignoreFiles>
     </projectFiles>
     <issueHandlers>
+        <UnusedClass errorLevel="suppress" />
+        <UnusedParam errorLevel="suppress" />
         <PossiblyUnusedMethod errorLevel="suppress" />
         <PossiblyUnusedProperty errorLevel="suppress" />
-        <UnusedClass errorLevel="suppress" />
+        <PossiblyUnusedReturnValue errorLevel="suppress" />
+        <MissingOverrideAttribute errorLevel="info" />
     </issueHandlers>
 </psalm>
