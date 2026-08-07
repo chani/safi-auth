@@ -129,6 +129,46 @@ final class AdminController extends AbstractController
         return $this->redirect('/admin/sessions');
     }
 
+    #[Route('/admin/sessions/unlock-bulk', method: 'POST', name: 'admin.sessions.unlock_bulk')]
+    public function unlockBulkIps(): Response
+    {
+        $this->enforceAdminRole();
+        $this->validateCsrf();
+        $rawIds = $this->request->post('ids');
+
+        if (is_array($rawIds)) {
+            foreach ($rawIds as $id) {
+                if (is_numeric($id)) {
+                    $lockedIp = $this->db->loadModel(LockedIp::class, (int) $id);
+                    if ($lockedIp->getId() > 0) {
+                        $this->authService->unlockIp($lockedIp);
+                    }
+                }
+            }
+        }
+
+        return $this->redirect('/admin/sessions');
+    }
+
+    #[Route('/admin/sessions/kill', method: 'POST', name: 'admin.sessions.kill')]
+    public function killSession(): Response
+    {
+        $this->enforceAdminRole();
+        $this->validateCsrf();
+        $id = $this->request->post('id');
+
+        if (is_numeric($id)) {
+            $this->db->transaction(function () use ($id): void {
+                $userSession = $this->db->loadModel(UserSession::class, (int) $id);
+                if ($userSession->getId() > 0) {
+                    $this->db->trashModel($userSession);
+                }
+            });
+        }
+
+        return $this->redirect('/admin/sessions');
+    }
+
     private function enforceAdminRole(): void
     {
         $rawCurrentUserId = $this->session->get('auth_user_id', 0);
