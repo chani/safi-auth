@@ -5,7 +5,9 @@
          colors="true"
          executionOrder="depends,defects"
          failOnRisky="true"
-         failOnWarning="true">
+         failOnWarning="true"
+         displayDetailsOnTestsThatTriggerNotices="true"
+         displayDetailsOnPhpunitNotices="true">
     <testsuites>
         <testsuite name="Safi Auth Extension Test Suite">
             <directory>tests</directory>
