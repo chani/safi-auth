@@ -40,12 +40,12 @@ final readonly class AuthService
         $ip = $this->resolveClientIp();
         $shieldKey = $ip . ':' . $username;
 
-        if ($this->shield->isLocked($ip) || $this->shield->isLocked($shieldKey)) {
+        $lockedIp = $this->db->findOneModel(LockedIp::class, 'ip = ? AND locked_until > ?', [$ip, date('Y-m-d H:i:s')]);
+        if ($lockedIp instanceof LockedIp) {
             return false;
         }
 
-        $lockedIp = $this->db->findOneModel(LockedIp::class, 'ip = ? AND locked_until > ?', [$ip, date('Y-m-d H:i:s')]);
-        if ($lockedIp instanceof LockedIp) {
+        if ($this->shield->isLocked($shieldKey)) {
             return false;
         }
 
@@ -57,7 +57,6 @@ final readonly class AuthService
 
         if (password_verify($password, $user->password)) {
             $this->shield->reset($shieldKey);
-            $this->shield->reset($ip);
             $this->login($user->getId(), $user->email);
             return true;
         }
@@ -69,24 +68,13 @@ final readonly class AuthService
     private function recordFailureAndAudit(string $username, string $ip, string $shieldKey): void
     {
         $this->shield->recordFailure($shieldKey);
-        $this->shield->recordFailure($ip);
 
-        $this->db->transaction(function () use ($username, $ip, $shieldKey): void {
+        $this->db->transaction(function () use ($username, $ip): void {
             $attempt = $this->db->dispenseModel(LoginAttempt::class);
             $attempt->ip = $ip;
             $attempt->username = $username;
             $attempt->attemptedAt = date('Y-m-d H:i:s');
             $this->db->storeModel($attempt);
-
-            if ($this->shield->isLocked($shieldKey) || $this->shield->isLocked($ip)) {
-                $lockedIp = $this->db->findOneModel(LockedIp::class, 'ip = ?', [$ip]);
-                if (!$lockedIp instanceof LockedIp) {
-                    $lockedIp = $this->db->dispenseModel(LockedIp::class);
-                    $lockedIp->ip = $ip;
-                }
-                $lockedIp->lockedUntil = date('Y-m-d H:i:s', time() + 300);
-                $this->db->storeModel($lockedIp);
-            }
         });
     }
 
@@ -135,11 +123,22 @@ final readonly class AuthService
         }
 
         $sessId = $this->session->getId();
+        $userSession = null;
         if ($sessId !== '') {
             $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
             if (!$userSession instanceof UserSession) {
                 $this->logout();
                 return false;
+            }
+
+            $rawUserId = $this->session->get(self::SESSION_USER_KEY, 0);
+            $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
+            if ($userId > 0) {
+                $user = $this->db->loadModel(User::class, $userId);
+                if ($user->getId() <= 0) {
+                    $this->logout();
+                    return false;
+                }
             }
         }
 
@@ -148,7 +147,7 @@ final readonly class AuthService
         $rawUsername = $this->session->get(self::SESSION_USERNAME_KEY, 'admin');
         $username = is_string($rawUsername) ? $rawUsername : 'admin';
 
-        $this->syncUserSessionToDb($sessId, $userId, $username);
+        $this->syncUserSessionToDb($sessId, $userId, $username, $userSession);
         return true;
     }
 
@@ -193,16 +192,16 @@ final readonly class AuthService
         return $this->security->getUserAgent();
     }
 
-    private function syncUserSessionToDb(string $sessId, int $userId, string $username): void
+    private function syncUserSessionToDb(string $sessId, int $userId, string $username, ?UserSession $existingSession = null): void
     {
         if ($sessId === '') {
             return;
         }
 
-        $this->db->transaction(function () use ($sessId, $userId, $username): void {
+        $this->db->transaction(function () use ($sessId, $userId, $username, $existingSession): void {
             $ip = $this->resolveClientIp();
 
-            $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
+            $userSession = $existingSession ?? $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
             if (!$userSession instanceof UserSession) {
                 $userSession = $this->db->dispenseModel(UserSession::class);
                 $userSession->sessionId = $sessId;
