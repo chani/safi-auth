@@ -88,6 +88,7 @@ final class ExampleController extends AbstractController
 
 ## 4. Architecture & Concepts
 
+- **ORM & Database Agnostic:** `safi-auth` depends solely on `safi-core` contracts (`DatabaseDriverInterface` and `ModelInterface`). It does not hardcode any ORM dependency (such as RedBeanPHP or Eloquent) and works seamlessly with any database driver registered in the Safi container.
 - **Inverted Access Control:** Unflagged routes are blocked by `AuthMiddleware`. Access requires explicit `public: true` route metadata.
 - **XHR & HTMX Behavior:** Unauthenticated XHR requests receive HTTP 401 with an `HX-Redirect: /login` header instead of standard 302 HTML redirects.
 - **Brute-Force Shield:** `BruteForceShield` limits failed login attempts using a PSR-16 cache backend or in-memory array storage.
