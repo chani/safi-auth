@@ -56,13 +56,19 @@ final class AdminController extends AbstractController
             throw new ValidationException('A valid email address is required.');
         }
 
+        $cleanEmail = strtolower(trim($email));
+        $existing = $this->db->findOneModel(User::class, 'email = ?', [$cleanEmail]);
+        if ($existing instanceof User) {
+            throw new ValidationException('An account with this email address already exists.');
+        }
+
         if (!is_string($password) || mb_strlen(trim($password)) < 8) {
             throw new ValidationException('Password must be at least 8 characters long.');
         }
 
-        $this->db->transaction(function () use ($email, $password): void {
+        $this->db->transaction(function () use ($cleanEmail, $password): void {
             $user = $this->db->dispenseModel(User::class);
-            $user->email = $email;
+            $user->email = $cleanEmail;
             $user->password = $this->authService->hashPassword($password);
             $user->role = 'user';
             $user->createdAt = date('Y-m-d H:i:s');
@@ -89,6 +95,12 @@ final class AdminController extends AbstractController
                 $this->db->transaction(function () use ($userId): void {
                     $user = $this->db->loadModel(User::class, $userId);
                     if ($user->getId() > 0) {
+                        $sessions = $this->db->findModels(UserSession::class, 'user_id = ?', [$userId]);
+                        foreach ($sessions as $userSession) {
+                            if ($userSession instanceof UserSession) {
+                                $this->db->trashModel($userSession);
+                            }
+                        }
                         $this->db->trashModel($user);
                     }
                 });
