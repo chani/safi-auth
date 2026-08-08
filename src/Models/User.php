@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Models;
 
-use Safi\Extensions\DbRedBean\RedBeanModel;
-
-final class User extends RedBeanModel
+final class User extends AbstractAuthModel
 {
     public string $email {
         get {

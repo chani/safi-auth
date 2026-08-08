@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth\Models;
 
-use Safi\Extensions\DbRedBean\RedBeanModel;
-
-final class LoginAttempt extends RedBeanModel
+final class LoginAttempt extends AbstractAuthModel
 {
     public string $ip {
         get {
