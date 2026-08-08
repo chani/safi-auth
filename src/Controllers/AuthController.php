@@ -29,7 +29,7 @@ final class AuthController extends AbstractController
     public function showLogin(): Response
     {
         if ($this->authService->isAuthenticated()) {
-            return $this->redirect('/admin');
+            return $this->redirect('/admin/users');
         }
 
         return $this->render('@Auth/login', [
@@ -48,12 +48,12 @@ final class AuthController extends AbstractController
         if (is_string($username) && is_string($password) && $this->authService->loginWithCredentials($username, $password)) {
             if ($this->request->isXhr()) {
                 return new Response('Redirecting...', 200, [
-                    'HX-Redirect' => '/admin',
-                    'Location' => '/admin',
+                    'HX-Redirect' => '/admin/users',
+                    'Location' => '/admin/users',
                 ]);
             }
 
-            return $this->redirect('/admin');
+            return $this->redirect('/admin/users');
         }
 
         return $this->render('@Auth/login', [
