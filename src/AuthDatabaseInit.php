@@ -11,13 +11,14 @@ final readonly class AuthDatabaseInit
 {
     public function __construct(private DatabaseDriverInterface $db) {}
 
-    public function initializeSchema(?string $customAdminPassword = null): string
+    public function initializeSchema(?string $customAdminPassword = null): ?string
     {
-        $generatedPassword = $customAdminPassword ?? bin2hex(random_bytes(10));
+        $generatedPassword = null;
 
-        $this->db->transaction(function () use ($generatedPassword): void {
+        $this->db->transaction(function () use ($customAdminPassword, &$generatedPassword): void {
             $existingAdmin = $this->db->findOneModel(User::class, 'email = ? OR role = ?', ['admin', 'admin']);
             if (!$existingAdmin instanceof User) {
+                $generatedPassword = $customAdminPassword ?? bin2hex(random_bytes(10));
                 $admin = $this->db->dispenseModel(User::class);
                 $admin->email = 'admin';
                 $admin->password = password_hash($generatedPassword, PASSWORD_DEFAULT);
