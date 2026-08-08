@@ -14,15 +14,35 @@ composer require chani/safi-auth
 
 ### Service Provider Registration
 
-Register `AuthServiceProvider` during application bootstrapping (`init.inc.php`):
+Register `AuthServiceProvider` into the `Assembler` during application bootstrapping (`init.inc.php`):
 
 ```php
-$assembler->registerProvider(new \Safi\Extensions\Auth\AuthServiceProvider());
+use Safi\Extensions\Auth\AuthServiceProvider;
+
+$provider = new AuthServiceProvider();
+$provider->register($assembler);
+```
+
+### Attach Authentication Middleware
+
+Attach `AuthMiddleware` to your `Kernel` middleware pipeline:
+
+```php
+use Safi\Extensions\Auth\AuthMiddleware;
+
+$kernel = new Kernel(
+    router: $router,
+    logger: $logger,
+    view: $viewEngine,
+    middlewares: [
+        $assembler->get(AuthMiddleware::class),
+    ],
+);
 ```
 
 ### Database Initialization
 
-Execute the CLI command to create schema tables and default admin record:
+Execute the CLI command to create schema tables and the default admin record (`admin` / `admin`):
 
 ```bash
 php bin/safi auth:init
