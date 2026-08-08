@@ -20,7 +20,7 @@ final readonly class AuthInitCommand implements CommandInterface
     #[\Override]
     public function getDescription(): string
     {
-        return 'Creates authentication database tables and default admin record.';
+        return 'Creates authentication database tables and initial admin record.';
     }
 
     #[\Override]
@@ -32,7 +32,15 @@ final readonly class AuthInitCommand implements CommandInterface
     #[\Override]
     public function execute(array $args): int
     {
-        $this->init->initializeSchema();
+        $customPassword = $args[0] ?? null;
+        $password = $this->init->initializeSchema($customPassword);
+
+        echo "Auth database initialized successfully.\n";
+        if ($customPassword === null) {
+            echo "Generated initial admin password: {$password}\n";
+            echo "PLEASE CHANGE THIS PASSWORD IMMEDIATELY UPON FIRST LOGIN!\n";
+        }
+
         return 0;
     }
 }
