@@ -8,6 +8,7 @@ use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Core\Contracts\SecurityServiceInterface;
 use Safi\Extensions\Auth\Models\LockedIp;
 use Safi\Extensions\Auth\Models\LoginAttempt;
+use Safi\Extensions\Auth\Models\RememberToken;
 use Safi\Extensions\Auth\Models\User;
 use Safi\Extensions\Auth\Models\UserSession;
 use Safi\Extensions\Session\SessionServiceInterface;
@@ -17,6 +18,10 @@ final readonly class AuthService
     private const string SESSION_USER_KEY = 'auth_user_id';
     private const string SESSION_USERNAME_KEY = 'auth_username';
     private const string SESSION_FINGERPRINT_KEY = 'auth_fingerprint';
+    private const string SESSION_SNAPSHOT_KEY = 'auth_user_snapshot';
+
+    // Dummy hash to neutralize timing side-channels during user enumeration attempts
+    private const string DUMMY_HASH = '$2y$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUU123456';
 
     public function __construct(
         private BruteForceShield $shield,
@@ -51,11 +56,21 @@ final readonly class AuthService
 
         $user = $this->db->findOneModel(User::class, 'email = ? OR email = ?', [$username, strtolower(trim($username))]);
         if (!$user instanceof User) {
+            // Constant-time execution to prevent timing-based user enumeration
+            /** @psalm-suppress UnusedFunctionCall */
+            password_verify($password, self::DUMMY_HASH);
             $this->recordFailureAndAudit($username, $ip, $shieldKey);
             return false;
         }
 
         if (password_verify($password, $user->password)) {
+            if (password_needs_rehash($user->password, PASSWORD_DEFAULT)) {
+                $this->db->transaction(function () use ($user, $password): void {
+                    $user->password = password_hash($password, PASSWORD_DEFAULT);
+                    $this->db->storeModel($user);
+                });
+            }
+
             $this->shield->reset($shieldKey);
             $this->login($user->getId(), $user->email);
             return true;
@@ -63,6 +78,66 @@ final readonly class AuthService
 
         $this->recordFailureAndAudit($username, $ip, $shieldKey);
         return false;
+    }
+
+    public function createRememberToken(int $userId): string
+    {
+        $selector = bin2hex(random_bytes(16));
+        $validator = bin2hex(random_bytes(32));
+
+        $this->db->transaction(function () use ($selector, $validator, $userId): void {
+            $token = $this->db->dispenseModel(RememberToken::class);
+            $token->selector = $selector;
+            $token->validatorHash = hash('sha256', $validator);
+            $token->userId = $userId;
+            $token->expiresAt = date('Y-m-d H:i:s', time() + (86400 * 30));
+            $this->db->storeModel($token);
+        });
+
+        return $selector . ':' . $validator;
+    }
+
+    public function loginWithRememberToken(string $cookieValue): ?string
+    {
+        $parts = explode(':', $cookieValue, 2);
+        if (count($parts) !== 2) {
+            return null;
+        }
+
+        [$selector, $validator] = $parts;
+
+        $token = $this->db->findOneModel(
+            RememberToken::class,
+            'selector = ? AND expires_at > ?',
+            [$selector, date('Y-m-d H:i:s')],
+        );
+
+        if (!$token instanceof RememberToken) {
+            return null;
+        }
+
+        if (!hash_equals($token->validatorHash, hash('sha256', $validator))) {
+            $this->db->transaction(function () use ($token): void {
+                $this->db->trashModel($token);
+            });
+            return null;
+        }
+
+        $user = $this->db->loadModel(User::class, $token->userId);
+        if ($user->getId() <= 0) {
+            $this->db->transaction(function () use ($token): void {
+                $this->db->trashModel($token);
+            });
+            return null;
+        }
+
+        $this->db->transaction(function () use ($token): void {
+            $this->db->trashModel($token);
+        });
+
+        $this->login($user->getId(), $user->email);
+
+        return $this->createRememberToken($user->getId());
     }
 
     private function recordFailureAndAudit(string $username, string $ip, string $shieldKey): void
@@ -89,6 +164,15 @@ final readonly class AuthService
 
         $userAgent = $this->resolveUserAgent();
         $this->session->set(self::SESSION_FINGERPRINT_KEY, hash('sha256', $userAgent));
+
+        $user = $this->db->loadModel(User::class, $userId);
+        $role = $user->getId() > 0 ? $user->role : 'user';
+
+        $this->session->set(self::SESSION_SNAPSHOT_KEY, [
+            'id' => $userId,
+            'email' => $username,
+            'role' => $role,
+        ]);
 
         $this->syncUserSessionToDb($sessId, $userId, $username);
     }
@@ -122,23 +206,25 @@ final readonly class AuthService
             return false;
         }
 
+        $snapshot = $this->session->get(self::SESSION_SNAPSHOT_KEY);
         $sessId = $this->session->getId();
-        $userSession = null;
-        if ($sessId !== '') {
-            $userSession = $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
-            if (!$userSession instanceof UserSession) {
-                $this->logout();
-                return false;
-            }
 
+        if ($sessId !== '' && !is_array($snapshot)) {
             $rawUserId = $this->session->get(self::SESSION_USER_KEY, 0);
             $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
+
             if ($userId > 0) {
                 $user = $this->db->loadModel(User::class, $userId);
                 if ($user->getId() <= 0) {
                     $this->logout();
                     return false;
                 }
+
+                $this->session->set(self::SESSION_SNAPSHOT_KEY, [
+                    'id' => $userId,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                ]);
             }
         }
 
@@ -147,7 +233,7 @@ final readonly class AuthService
         $rawUsername = $this->session->get(self::SESSION_USERNAME_KEY, 'admin');
         $username = is_string($rawUsername) ? $rawUsername : 'admin';
 
-        $this->syncUserSessionToDb($sessId, $userId, $username, $userSession);
+        $this->syncUserSessionToDb($sessId, $userId, $username);
         return true;
     }
 
@@ -198,20 +284,28 @@ final readonly class AuthService
             return;
         }
 
-        $this->db->transaction(function () use ($sessId, $userId, $username, $existingSession): void {
-            $ip = $this->resolveClientIp();
+        $userSession = $existingSession ?? $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
 
-            $userSession = $existingSession ?? $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
+        if ($userSession instanceof UserSession && $userSession->getId() > 0) {
+            $lastActiveStr = $userSession->lastActive;
+            if ($lastActiveStr !== '') {
+                $lastActiveTs = strtotime($lastActiveStr);
+                if ($lastActiveTs !== false && (time() - $lastActiveTs < 300)) {
+                    return; // Throttle: Only update DB at most once every 5 minutes
+                }
+            }
+        }
+
+        $this->db->transaction(function () use ($sessId, $userId, $username, $userSession): void {
             if (!$userSession instanceof UserSession) {
                 $userSession = $this->db->dispenseModel(UserSession::class);
                 $userSession->sessionId = $sessId;
             }
             $userSession->userId = $userId;
             $userSession->username = $username;
-            $userSession->ipAddress = $ip;
+            $userSession->ipAddress = $this->resolveClientIp();
             $userSession->lastActive = date('Y-m-d H:i:s');
             $this->db->storeModel($userSession);
         });
     }
-
 }
