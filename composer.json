@@ -26,18 +26,13 @@
     {
       "type": "path",
       "url": "../safi-*"
-    },
-    {
-      "type": "path",
-      "url": "../wajha-router"
     }
   ],
   "minimum-stability": "dev",
   "prefer-stable": true,
   "extra": {
     "branch-alias": {
-      "dev-main": "0.1.x-dev",
-      "dev-master": "0.1.x-dev"
+      "dev-main": "0.1.x-dev"
     }
   }
 }
