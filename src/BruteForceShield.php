@@ -43,21 +43,35 @@ final class BruteForceShield
 
     public function recordFailure(string $key): void
     {
+        $now = time();
+
         if ($this->cache instanceof CacheInterface) {
             $cacheKey = $this->getCacheKey($key);
             $data = $this->cache->get($cacheKey);
 
-            $attempts = is_array($data) && is_numeric($data['attempts'] ?? null) ? (int) $data['attempts'] : 0;
-            $attempts++;
+            if (is_array($data) && isset($data['reset_time']) && is_numeric($data['reset_time'])) {
+                $resetTime = (int) $data['reset_time'];
+                if ($now > $resetTime) {
+                    $attempts = 1;
+                    $resetTime = $now + $this->decaySeconds;
+                } else {
+                    $currentAttempts = (isset($data['attempts']) && is_numeric($data['attempts'])) ? (int) $data['attempts'] : 0;
+                    $attempts = $currentAttempts + 1;
+                }
+            } else {
+                $attempts = 1;
+                $resetTime = $now + $this->decaySeconds;
+            }
+
+            $remainingTtl = max(1, $resetTime - $now);
 
             $this->cache->set($cacheKey, [
                 'attempts' => $attempts,
-                'updated_at' => time(),
-            ], $this->decaySeconds);
+                'reset_time' => $resetTime,
+            ], $remainingTtl);
             return;
         }
 
-        $now = time();
         if (!isset($this->storage[$key]) || $now > $this->storage[$key]['reset_time']) {
             $this->storage[$key] = [
                 'attempts' => 1,
