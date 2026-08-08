@@ -6,9 +6,11 @@
   "require": {
     "php": "^8.5",
     "chani/safi-core": "^0.1.18",
-    "chani/safi-db-redbean": "^0.1.11",
     "chani/safi-session": "^0.1.5",
     "psr/simple-cache": "^3.0"
+  },
+  "require-dev": {
+    "chani/safi-db-redbean": "^0.1.11"
   },
   "autoload": {
     "psr-4": {
