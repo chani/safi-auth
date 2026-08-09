@@ -36,6 +36,36 @@ final class User extends AbstractAuthModel
         }
     }
 
+    public bool $mustChangePassword {
+        get {
+            $val = $this->getProperty('must_change_password', false);
+            return (bool) $val;
+        }
+        set {
+            $this->setProperty('must_change_password', $value ? 1 : 0);
+        }
+    }
+
+    public string $totpSecret {
+        get {
+            $val = $this->getProperty('totp_secret', '');
+            return is_string($val) ? $val : '';
+        }
+        set {
+            $this->setProperty('totp_secret', trim($value));
+        }
+    }
+
+    public bool $is2faEnabled {
+        get {
+            $val = $this->getProperty('is_2fa_enabled', false);
+            return (bool) $val;
+        }
+        set {
+            $this->setProperty('is_2fa_enabled', $value ? 1 : 0);
+        }
+    }
+
     public string $createdAt {
         get {
             $val = $this->getProperty('created_at', '');
