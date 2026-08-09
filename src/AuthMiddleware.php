@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth;
 
+use Safi\Core\Contracts\RouterInterface;
 use Safi\Core\Http\Context;
 use Safi\Core\Http\MiddlewareInterface;
 use Safi\Core\Http\RequestHandlerInterface;
@@ -13,6 +14,7 @@ final readonly class AuthMiddleware implements MiddlewareInterface
 {
     public function __construct(
         private AuthService $auth,
+        private ?RouterInterface $router = null,
     ) {}
 
     #[\Override]
@@ -27,20 +29,35 @@ final readonly class AuthMiddleware implements MiddlewareInterface
         }
 
         if (!$this->auth->isAuthenticated()) {
+            $loginUrl = $this->resolveLoginUrl();
+
             if ($context->request->isXhr()) {
                 return new Response(
-                    (string) json_encode(['error' => 'Unauthorized', 'login_url' => '/login']),
+                    (string) json_encode(['error' => 'Unauthorized', 'login_url' => $loginUrl]),
                     401,
                     [
                         'Content-Type' => 'application/json',
-                        'HX-Redirect' => '/login',
+                        'HX-Redirect' => $loginUrl,
                     ],
                 );
             }
 
-            return new Response('Redirecting to login...', 302, ['Location' => '/login']);
+            return new Response('Redirecting to login...', 302, ['Location' => $loginUrl]);
         }
 
         return $handler->handle($context);
+    }
+
+    private function resolveLoginUrl(): string
+    {
+        if ($this->router instanceof RouterInterface) {
+            try {
+                return $this->router->generateUrl('auth.login.show');
+            } catch (\Throwable) {
+                // Fallback if route name is not registered
+            }
+        }
+
+        return '/login';
     }
 }
