@@ -42,10 +42,14 @@ $kernel = new Kernel(
 
 ### Database Initialization
 
-Execute the CLI command to create schema tables and the default admin record (`admin` / `admin`):
+Execute the CLI command to create schema tables and the default admin record:
 
 ```bash
+# Initialize with default credentials (admin / admin):
 php bin/safi auth:init
+
+# Or set a custom admin password directly:
+php bin/safi auth:init YourSecurePassword123
 ```
 
 ---
@@ -81,6 +85,22 @@ final class ExampleController extends AbstractController
 }
 ```
 
+### Handling Two-Factor Authentication (2FA / TOTP)
+
+When a user with 2FA enabled attempts to log in, `loginWithCredentials()` returns `false` and dispatches a `TwoFactorChallengeRequestedEvent`.
+
+To complete authentication or generate a setup QR code in your application/UI:
+
+```php
+// 1. Verify TOTP Challenge Code
+if ($authService->isTwoFactorPending()) {
+    $success = $authService->verifyTwoFactorCode($userInputCode);
+}
+
+// 2. Generate Provisioning URI for QR Codes (e.g. Authenticator Apps)
+$provisioningUri = $totpService->getProvisioningUri($user->email, $secret);
+```
+
 ---
 
 ## 3. Reference
@@ -88,30 +108,24 @@ final class ExampleController extends AbstractController
 ### CLI Commands
 
 - `auth:init`: Creates database tables and initial admin record.
+- `auth:permissions-scan`: Scans codebase for `#[Permission]` attributes and registers them in the database.
 
 ### Endpoints
 
-| URI                           | Method | Public | Name                         | Function                       |
-| ----------------------------- | ------ | ------ | ---------------------------- | ------------------------------ |
-| `/login`                      | `GET`  | Yes    | `auth.login.show`            | Displays login form            |
-| `/login`                      | `POST` | Yes    | `auth.login`                 | Authenticates credentials      |
-| `/logout`                     | `POST` | No     | `auth.logout`                | Terminates session             |
-| `/admin/users`                | `GET`  | No     | `admin.users.index`          | User directory list            |
-| `/admin/users/save`           | `POST` | No     | `admin.users.save`           | Creates user                   |
-| `/admin/users/delete`         | `POST` | No     | `admin.users.delete`         | Deletes user                   |
-| `/admin/sessions`             | `GET`  | No     | `admin.sessions.index`       | Active sessions and locked IPs |
-| `/admin/sessions/unlock`      | `POST` | No     | `admin.sessions.unlock`      | Unlocks single IP              |
-| `/admin/sessions/unlock-bulk` | `POST` | No     | `admin.sessions.unlock_bulk` | Unlocks multiple IPs           |
-| `/admin/sessions/kill`        | `POST` | No     | `admin.sessions.kill`        | Terminates active user session |
+| URI       | Method | Public | Name              | Function                  |
+| --------- | ------ | ------ | ----------------- | ------------------------- |
+| `/login`  | `GET`  | Yes    | `auth.login.show` | Displays login form       |
+| `/login`  | `POST` | Yes    | `auth.login`      | Authenticates credentials |
+| `/logout` | `POST` | No     | `auth.logout`     | Terminates active session |
 
 ---
 
 ## 4. Architecture & Concepts
 
-- **ORM & Database Agnostic:** `safi-auth` depends solely on `safi-core` contracts (`DatabaseDriverInterface` and `ModelInterface`). It does not hardcode any ORM dependency (such as RedBeanPHP or Eloquent) and works seamlessly with any database driver registered in the Safi container.
+- **ORM & Database Agnostic:** `safi-auth` depends solely on `safi-core` contracts (`DatabaseDriverInterface` and `ModelInterface`). It does not hardcode any ORM dependency and works seamlessly with any registered database driver.
 - **Inverted Access Control:** Unflagged routes are blocked by `AuthMiddleware`. Access requires explicit `public: true` route metadata.
-- **XHR & HTMX Behavior:** Unauthenticated XHR requests receive HTTP 401 with an `HX-Redirect: /login` header instead of standard 302 HTML redirects.
-- **Brute-Force Shield:** `BruteForceShield` limits failed login attempts using a PSR-16 cache backend or in-memory array storage.
+- **XHR & HTMX Behavior:** Unauthenticated XHR/HTMX requests receive HTTP 401 with an `HX-Redirect: /login` header instead of standard HTML redirects.
+- **Brute-Force Shield:** `BruteForceShield` limits failed login attempts per IP/account using a PSR-16 cache backend or in-memory storage.
 
 ---
 
