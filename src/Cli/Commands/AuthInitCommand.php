@@ -36,10 +36,12 @@ final readonly class AuthInitCommand implements CommandInterface
         $password = $this->init->initializeSchema($customPassword);
 
         echo "Auth database initialized successfully.\n";
-        if ($password !== null && $customPassword === null) {
-            echo "Generated initial admin password: {$password}\n";
-            echo "PLEASE CHANGE THIS PASSWORD IMMEDIATELY UPON FIRST LOGIN!\n";
-        } elseif ($password === null) {
+        if ($password !== null) {
+            echo "Initial admin user created with password: {$password}\n";
+            if ($customPassword === null) {
+                echo "Default password 'admin' set. PLEASE CHANGE THIS PASSWORD IMMEDIATELY UPON FIRST LOGIN!\n";
+            }
+        } else {
             echo "Admin user already exists. Schema verified.\n";
         }
 
