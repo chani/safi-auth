@@ -63,15 +63,8 @@ final readonly class AuthService
         $this->hashAlgo = is_string($rawAlgo) || is_int($rawAlgo) ? $rawAlgo : PASSWORD_DEFAULT;
 
         $rawOptions = $config['hash_options'] ?? null;
-        $options = [];
-        if (is_array($rawOptions)) {
-            foreach ($rawOptions as $key => $value) {
-                if (is_string($key)) {
-                    $options[$key] = $value;
-                }
-            }
-        }
-        $this->hashOptions = $options !== [] ? $options : ['cost' => 12];
+        $filteredOptions = is_array($rawOptions) ? array_filter($rawOptions, 'is_string', ARRAY_FILTER_USE_KEY) : [];
+        $this->hashOptions = $filteredOptions !== [] ? $filteredOptions : ['cost' => 12];
 
         $this->totpAlgo = is_string($config['totp_algo'] ?? null) ? $config['totp_algo'] : 'sha256';
     }
@@ -185,7 +178,6 @@ final readonly class AuthService
             return false;
         }
 
-        // TOTP Replay Protection
         $usedKey = 'used_totp_' . $userId . '_' . hash('sha256', $code);
         if ($this->storage->has($usedKey)) {
             $this->recordFailureAndAudit($user->email, $ip, $shieldKey);
