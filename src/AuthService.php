@@ -6,12 +6,24 @@ namespace Safi\Extensions\Auth;
 
 use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Core\Contracts\SecurityServiceInterface;
+use Safi\Core\Event\EventDispatcher;
+use Safi\Core\Exception\ValidationException;
+use Safi\Extensions\Auth\Contracts\AuthenticationStorageInterface;
+use Safi\Extensions\Auth\Events\FailedLoginAttemptEvent;
+use Safi\Extensions\Auth\Events\PermissionDeniedEvent;
+use Safi\Extensions\Auth\Events\TwoFactorChallengeRequestedEvent;
+use Safi\Extensions\Auth\Events\UserLoggedInEvent;
+use Safi\Extensions\Auth\Events\UserLoggedOutEvent;
+use Safi\Extensions\Auth\Models\Group;
+use Safi\Extensions\Auth\Models\GroupPermission;
 use Safi\Extensions\Auth\Models\LockedIp;
 use Safi\Extensions\Auth\Models\LoginAttempt;
 use Safi\Extensions\Auth\Models\RememberToken;
 use Safi\Extensions\Auth\Models\User;
+use Safi\Extensions\Auth\Models\UserGroup;
+use Safi\Extensions\Auth\Models\UserPermission;
 use Safi\Extensions\Auth\Models\UserSession;
-use Safi\Extensions\Session\SessionServiceInterface;
+use Safi\Extensions\Auth\Services\TotpService;
 
 final readonly class AuthService
 {
@@ -19,20 +31,60 @@ final readonly class AuthService
     private const string SESSION_USERNAME_KEY = 'auth_username';
     private const string SESSION_FINGERPRINT_KEY = 'auth_fingerprint';
     private const string SESSION_SNAPSHOT_KEY = 'auth_user_snapshot';
+    private const string SESSION_LAST_SYNC_KEY = 'auth_last_db_sync';
+    private const string SESSION_LAST_INTERACTION_KEY = 'auth_last_interaction_time';
+    private const string PENDING_2FA_USER_KEY = 'auth_pending_2fa_user_id';
 
-    // Dummy hash to neutralize timing side-channels during user enumeration attempts
     private const string DUMMY_HASH = '$2y$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUU123456';
 
+    private int $maxIdleSeconds;
+    private int $minPasswordLength;
+    private string|int $hashAlgo;
+    /** @var array<string, mixed> */
+    private array $hashOptions;
+    private string $totpAlgo;
+
+    /**
+     * @param array<string, mixed> $config Runtime auth configuration overrides
+     */
     public function __construct(
         private BruteForceShield $shield,
         private DatabaseDriverInterface $db,
-        private SessionServiceInterface $session,
+        private AuthenticationStorageInterface $storage,
         private SecurityServiceInterface $security,
-    ) {}
+        private EventDispatcher $eventDispatcher,
+        private TotpService $totpService,
+        array $config = [],
+    ) {
+        $this->maxIdleSeconds = is_numeric($config['max_idle_seconds'] ?? null) ? (int) $config['max_idle_seconds'] : 900;
+        $this->minPasswordLength = is_numeric($config['min_password_length'] ?? null) ? (int) $config['min_password_length'] : 12;
+
+        $rawAlgo = $config['hash_algo'] ?? PASSWORD_DEFAULT;
+        $this->hashAlgo = is_string($rawAlgo) || is_int($rawAlgo) ? $rawAlgo : PASSWORD_DEFAULT;
+
+        $rawOptions = $config['hash_options'] ?? null;
+        $options = [];
+        if (is_array($rawOptions)) {
+            foreach ($rawOptions as $key => $value) {
+                if (is_string($key)) {
+                    $options[$key] = $value;
+                }
+            }
+        }
+        $this->hashOptions = $options !== [] ? $options : ['cost' => 12];
+
+        $this->totpAlgo = is_string($config['totp_algo'] ?? null) ? $config['totp_algo'] : 'sha256';
+    }
 
     public function hashPassword(string $password): string
     {
-        return password_hash($password, PASSWORD_DEFAULT);
+        if (mb_strlen($password) < $this->minPasswordLength) {
+            throw new ValidationException(
+                sprintf('Password does not meet security policy requirements (minimum %d characters required).', $this->minPasswordLength),
+            );
+        }
+
+        return password_hash($password, $this->hashAlgo, $this->hashOptions);
     }
 
     public function verifyPassword(string $password, string $hash): bool
@@ -40,44 +92,186 @@ final readonly class AuthService
         return password_verify($password, $hash);
     }
 
+    public function reauthenticate(string $password): bool
+    {
+        if (!$this->isAuthenticated()) {
+            return false;
+        }
+
+        $rawUserId = $this->storage->get(self::SESSION_USER_KEY, 0);
+        $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
+        if ($userId <= 0) {
+            return false;
+        }
+
+        $user = $this->db->loadModel(User::class, $userId);
+        if ($user->getId() <= 0) {
+            return false;
+        }
+
+        return password_verify($password, $user->password);
+    }
+
     public function loginWithCredentials(string $username, string $password): bool
     {
         $ip = $this->resolveClientIp();
-        $shieldKey = $ip . ':' . $username;
+        $cleanUsername = strtolower(trim($username));
+        $shieldKey = $ip . ':' . $cleanUsername;
 
         $lockedIp = $this->db->findOneModel(LockedIp::class, 'ip = ? AND locked_until > ?', [$ip, date('Y-m-d H:i:s')]);
         if ($lockedIp instanceof LockedIp) {
             return false;
         }
 
-        if ($this->shield->isLocked($shieldKey)) {
+        if ($this->shield->isLocked($shieldKey) || $this->shield->isLocked($ip)) {
             return false;
         }
 
-        $user = $this->db->findOneModel(User::class, 'email = ? OR email = ?', [$username, strtolower(trim($username))]);
+        $user = $this->db->findOneModel(User::class, 'email = ?', [$cleanUsername]);
         if (!$user instanceof User) {
-            // Constant-time execution to prevent timing-based user enumeration
             /** @psalm-suppress UnusedFunctionCall */
             password_verify($password, self::DUMMY_HASH);
-            $this->recordFailureAndAudit($username, $ip, $shieldKey);
+            $this->recordFailureAndAudit($cleanUsername, $ip, $shieldKey);
             return false;
         }
 
         if (password_verify($password, $user->password)) {
-            if (password_needs_rehash($user->password, PASSWORD_DEFAULT)) {
+            if (password_needs_rehash($user->password, $this->hashAlgo, $this->hashOptions)) {
                 $this->db->transaction(function () use ($user, $password): void {
-                    $user->password = password_hash($password, PASSWORD_DEFAULT);
+                    $user->password = password_hash($password, $this->hashAlgo, $this->hashOptions);
                     $this->db->storeModel($user);
                 });
             }
 
             $this->shield->reset($shieldKey);
+
+            if ($user->is2faEnabled && $user->totpSecret !== '') {
+                $this->storage->set(self::PENDING_2FA_USER_KEY, $user->getId());
+                $this->eventDispatcher->dispatch(new TwoFactorChallengeRequestedEvent($user->getId()));
+                return false;
+            }
+
             $this->login($user->getId(), $user->email);
             return true;
         }
 
-        $this->recordFailureAndAudit($username, $ip, $shieldKey);
+        $this->recordFailureAndAudit($cleanUsername, $ip, $shieldKey);
         return false;
+    }
+
+    public function isTwoFactorPending(): bool
+    {
+        return $this->storage->has(self::PENDING_2FA_USER_KEY);
+    }
+
+    public function verifyTwoFactorCode(string $code): bool
+    {
+        $ip = $this->resolveClientIp();
+        $rawUserId = $this->storage->get(self::PENDING_2FA_USER_KEY, 0);
+        $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
+
+        if ($userId <= 0) {
+            return false;
+        }
+
+        $user = $this->db->loadModel(User::class, $userId);
+        if ($user->getId() <= 0) {
+            $this->storage->remove(self::PENDING_2FA_USER_KEY);
+            return false;
+        }
+
+        $shieldKey = $ip . ':' . $user->email;
+        if ($this->shield->isLocked($shieldKey) || $this->shield->isLocked($ip)) {
+            return false;
+        }
+
+        // TOTP Replay Protection
+        $usedKey = 'used_totp_' . $userId . '_' . hash('sha256', $code);
+        if ($this->storage->has($usedKey)) {
+            $this->recordFailureAndAudit($user->email, $ip, $shieldKey);
+            return false;
+        }
+
+        if ($this->totpService->verifyCode($user->totpSecret, $code, 1, null, $this->totpAlgo)) {
+            $this->storage->set($usedKey, time());
+            $this->storage->remove(self::PENDING_2FA_USER_KEY);
+            $this->shield->reset($shieldKey);
+            $this->login($user->getId(), $user->email);
+            return true;
+        }
+
+        $this->recordFailureAndAudit($user->email, $ip, $shieldKey);
+        return false;
+    }
+
+    public function can(User|int $user, string $permission): bool
+    {
+        $userId = $user instanceof User ? $user->getId() : $user;
+        if ($userId <= 0) {
+            return false;
+        }
+
+        $userModel = $user instanceof User ? $user : $this->db->loadModel(User::class, $userId);
+        if ($userModel->getId() <= 0) {
+            return false;
+        }
+
+        if ($userModel->role === 'admin') {
+            return true;
+        }
+
+        $directPermission = $this->db->findOneModel(
+            UserPermission::class,
+            'user_id = ? AND permission_key = ?',
+            [$userId, $permission],
+        );
+        if ($directPermission instanceof UserPermission) {
+            return true;
+        }
+
+        $userGroups = $this->db->findModels(UserGroup::class, 'user_id = ?', [$userId]);
+        $visitedGroups = [];
+
+        foreach ($userGroups as $userGroup) {
+            if (!$userGroup instanceof UserGroup) {
+                continue;
+            }
+
+            $groupId = $userGroup->groupId;
+            if ($this->checkGroupPermissionRecursive($groupId, $permission, $visitedGroups)) {
+                return true;
+            }
+        }
+
+        $this->eventDispatcher->dispatch(new PermissionDeniedEvent($userId, $permission));
+        return false;
+    }
+
+    /**
+     * @param array<int, bool> $visited
+     */
+    private function checkGroupPermissionRecursive(int $groupId, string $permission, array &$visited): bool
+    {
+        if ($groupId <= 0 || isset($visited[$groupId])) {
+            return false;
+        }
+        $visited[$groupId] = true;
+
+        $groupPermission = $this->db->findOneModel(
+            GroupPermission::class,
+            'group_id = ? AND permission_key = ?',
+            [$groupId, $permission],
+        );
+        if ($groupPermission instanceof GroupPermission) {
+            return true;
+        }
+
+        $group = $this->db->loadModel(Group::class, $groupId);
+        if ($group->getId() <= 0 || $group->parentId <= 0) {
+            return false;
+        }
+
+        return $this->checkGroupPermissionRecursive($group->parentId, $permission, $visited);
     }
 
     public function createRememberToken(int $userId): string
@@ -143,6 +337,7 @@ final readonly class AuthService
     private function recordFailureAndAudit(string $username, string $ip, string $shieldKey): void
     {
         $this->shield->recordFailure($shieldKey);
+        $this->shield->recordFailure($ip);
 
         $this->db->transaction(function () use ($username, $ip): void {
             $attempt = $this->db->dispenseModel(LoginAttempt::class);
@@ -150,36 +345,54 @@ final readonly class AuthService
             $attempt->username = $username;
             $attempt->attemptedAt = date('Y-m-d H:i:s');
             $this->db->storeModel($attempt);
+
+            if ($this->shield->isLocked($ip)) {
+                $existingLock = $this->db->findOneModel(LockedIp::class, 'ip = ? AND locked_until > ?', [$ip, date('Y-m-d H:i:s')]);
+                if (!$existingLock instanceof LockedIp) {
+                    $lockedIp = $this->db->dispenseModel(LockedIp::class);
+                    $lockedIp->ip = $ip;
+                    $lockedIp->lockedUntil = date('Y-m-d H:i:s', time() + 1800);
+                    $this->db->storeModel($lockedIp);
+                }
+            }
         });
+
+        $this->eventDispatcher->dispatch(new FailedLoginAttemptEvent($username, $ip));
     }
 
-    public function login(int $userId, string $username = 'admin'): void
+    public function login(int $userId, string $username): void
     {
-        $this->session->start();
-        $this->session->regenerateId(true);
+        $this->storage->start();
+        $this->storage->regenerate(true);
 
-        $sessId = $this->session->getId();
-        $this->session->set(self::SESSION_USER_KEY, $userId);
-        $this->session->set(self::SESSION_USERNAME_KEY, $username);
+        $sessId = $this->storage->getId();
+        $this->storage->set(self::SESSION_USER_KEY, $userId);
+        $this->storage->set(self::SESSION_USERNAME_KEY, $username);
 
         $userAgent = $this->resolveUserAgent();
-        $this->session->set(self::SESSION_FINGERPRINT_KEY, hash('sha256', $userAgent));
+        $this->storage->set(self::SESSION_FINGERPRINT_KEY, hash('sha256', $userAgent));
 
         $user = $this->db->loadModel(User::class, $userId);
         $role = $user->getId() > 0 ? $user->role : 'user';
 
-        $this->session->set(self::SESSION_SNAPSHOT_KEY, [
+        $this->storage->set(self::SESSION_SNAPSHOT_KEY, [
             'id' => $userId,
             'email' => $username,
             'role' => $role,
         ]);
+        $this->storage->set(self::SESSION_LAST_INTERACTION_KEY, time());
 
+        $ip = $this->resolveClientIp();
         $this->syncUserSessionToDb($sessId, $userId, $username);
+
+        $this->eventDispatcher->dispatch(new UserLoggedInEvent($userId, $username, $ip));
     }
 
     public function logout(): void
     {
-        $sessId = $this->session->getId();
+        $sessId = $this->storage->getId();
+        $rawUserId = $this->storage->get(self::SESSION_USER_KEY, 0);
+        $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
 
         if ($sessId !== '') {
             $this->db->transaction(function () use ($sessId): void {
@@ -190,27 +403,41 @@ final readonly class AuthService
             });
         }
 
-        $this->session->destroy();
+        $this->storage->destroy();
+
+        if ($userId > 0) {
+            $this->eventDispatcher->dispatch(new UserLoggedOutEvent($userId, $sessId));
+        }
     }
 
     public function check(): bool
     {
-        if (!$this->session->has(self::SESSION_USER_KEY)) {
+        if (!$this->storage->has(self::SESSION_USER_KEY)) {
             return false;
         }
 
+        $lastInteraction = $this->storage->get(self::SESSION_LAST_INTERACTION_KEY);
+        $now = time();
+        if ($this->maxIdleSeconds > 0 && is_numeric($lastInteraction)) {
+            if (($now - (int) $lastInteraction) > $this->maxIdleSeconds) {
+                $this->logout();
+                return false;
+            }
+        }
+        $this->storage->set(self::SESSION_LAST_INTERACTION_KEY, $now);
+
         $currentAgent = $this->resolveUserAgent();
-        $expectedHash = $this->session->get(self::SESSION_FINGERPRINT_KEY);
+        $expectedHash = $this->storage->get(self::SESSION_FINGERPRINT_KEY);
         if (!is_string($expectedHash) || !hash_equals($expectedHash, hash('sha256', $currentAgent))) {
             $this->logout();
             return false;
         }
 
-        $snapshot = $this->session->get(self::SESSION_SNAPSHOT_KEY);
-        $sessId = $this->session->getId();
+        $snapshot = $this->storage->get(self::SESSION_SNAPSHOT_KEY);
+        $sessId = $this->storage->getId();
 
         if ($sessId !== '' && !is_array($snapshot)) {
-            $rawUserId = $this->session->get(self::SESSION_USER_KEY, 0);
+            $rawUserId = $this->storage->get(self::SESSION_USER_KEY, 0);
             $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
 
             if ($userId > 0) {
@@ -220,7 +447,7 @@ final readonly class AuthService
                     return false;
                 }
 
-                $this->session->set(self::SESSION_SNAPSHOT_KEY, [
+                $this->storage->set(self::SESSION_SNAPSHOT_KEY, [
                     'id' => $userId,
                     'email' => $user->email,
                     'role' => $user->role,
@@ -228,10 +455,10 @@ final readonly class AuthService
             }
         }
 
-        $rawUserId = $this->session->get(self::SESSION_USER_KEY, 0);
+        $rawUserId = $this->storage->get(self::SESSION_USER_KEY, 0);
         $userId = is_numeric($rawUserId) ? (int) $rawUserId : 0;
-        $rawUsername = $this->session->get(self::SESSION_USERNAME_KEY, 'admin');
-        $username = is_string($rawUsername) ? $rawUsername : 'admin';
+        $rawUsername = $this->storage->get(self::SESSION_USERNAME_KEY, '');
+        $username = is_string($rawUsername) ? $rawUsername : '';
 
         $this->syncUserSessionToDb($sessId, $userId, $username);
         return true;
@@ -284,17 +511,12 @@ final readonly class AuthService
             return;
         }
 
-        $userSession = $existingSession ?? $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
-
-        if ($userSession instanceof UserSession && $userSession->getId() > 0) {
-            $lastActiveStr = $userSession->lastActive;
-            if ($lastActiveStr !== '') {
-                $lastActiveTs = strtotime($lastActiveStr);
-                if ($lastActiveTs !== false && (time() - $lastActiveTs < 300)) {
-                    return; // Throttle: Only update DB at most once every 5 minutes
-                }
-            }
+        $lastSync = $this->storage->get(self::SESSION_LAST_SYNC_KEY, 0);
+        if (is_numeric($lastSync) && (time() - (int) $lastSync < 300)) {
+            return;
         }
+
+        $userSession = $existingSession ?? $this->db->findOneModel(UserSession::class, 'session_id = ?', [$sessId]);
 
         $this->db->transaction(function () use ($sessId, $userId, $username, $userSession): void {
             if (!$userSession instanceof UserSession) {
@@ -307,5 +529,7 @@ final readonly class AuthService
             $userSession->lastActive = date('Y-m-d H:i:s');
             $this->db->storeModel($userSession);
         });
+
+        $this->storage->set(self::SESSION_LAST_SYNC_KEY, time());
     }
 }
