@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Safi\Extensions\Auth;
 
+use Psr\Log\LoggerInterface;
 use Psr\SimpleCache\CacheInterface;
 
 final class BruteForceShield
@@ -15,7 +16,12 @@ final class BruteForceShield
         private readonly ?CacheInterface $cache = null,
         private readonly int $maxAttempts = 5,
         private readonly int $decaySeconds = 300,
-    ) {}
+        ?LoggerInterface $logger = null,
+    ) {
+        if (!$this->cache instanceof CacheInterface && $logger instanceof LoggerInterface && PHP_SAPI !== 'cli') {
+            $logger->warning('[SECURITY] BruteForceShield running in volatile memory mode without PSR-16 cache.');
+        }
+    }
 
     public function isLocked(string $key): bool
     {
