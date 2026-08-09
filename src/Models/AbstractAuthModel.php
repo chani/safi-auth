@@ -24,17 +24,24 @@ abstract class AbstractAuthModel implements ModelInterface
     #[\Override]
     public function getId(): int
     {
-        if (is_object($this->storage)) {
-            $id = $this->storage->id ?? 0;
-            return is_numeric($id) ? (int) $id : 0;
-        }
+        return $this->getInt('id');
+    }
 
-        if (is_array($this->storage)) {
-            $id = $this->storage['id'] ?? 0;
-            return is_numeric($id) ? (int) $id : 0;
-        }
+    protected function getString(string $property, string $default = ''): string
+    {
+        $val = $this->getProperty($property, $default);
+        return is_string($val) ? $val : $default;
+    }
 
-        return 0;
+    protected function getInt(string $property, int $default = 0): int
+    {
+        $val = $this->getProperty($property, $default);
+        return is_numeric($val) ? (int) $val : $default;
+    }
+
+    protected function getBool(string $property, bool $default = false): bool
+    {
+        return (bool) $this->getProperty($property, $default);
     }
 
     protected function getProperty(string $property, mixed $default = null): mixed
