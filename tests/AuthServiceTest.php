@@ -56,7 +56,7 @@ final class AuthServiceTest extends TestCase
     public function testSuccessfulCredentialsLogin(): void
     {
         $shield = new BruteForceShield();
-        $storage = $this->createStub(AuthenticationStorageInterface::class);
+        $storage = $this->createMock(AuthenticationStorageInterface::class);
         $storage->expects($this->once())->method('start');
         $storage->expects($this->once())->method('regenerate')->with(true)->willReturn(true);
         $storage->expects($this->once())->method('getId')->willReturn('sess_123');
@@ -82,7 +82,7 @@ final class AuthServiceTest extends TestCase
     public function testEnforcesInactivityTimeout(): void
     {
         $shield = new BruteForceShield();
-        $storage = $this->createStub(AuthenticationStorageInterface::class);
+        $storage = $this->createMock(AuthenticationStorageInterface::class);
 
         $storage->method('has')->willReturnCallback(static fn(string $key): bool => $key === 'auth_user_id');
         $storage->method('get')->willReturnCallback(static function (string $key, mixed $default = null) {
