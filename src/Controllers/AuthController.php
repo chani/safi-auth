@@ -7,6 +7,7 @@ namespace Safi\Extensions\Auth\Controllers;
 use Safi\Core\AbstractController;
 use Safi\Core\Attributes\Route;
 use Safi\Core\Contracts\DatabaseDriverInterface;
+use Safi\Core\Contracts\RouterInterface;
 use Safi\Core\Contracts\SecurityServiceInterface;
 use Safi\Core\Contracts\ViewEngineInterface;
 use Safi\Core\Http\Request;
@@ -21,6 +22,7 @@ final class AuthController extends AbstractController
         SecurityServiceInterface $security,
         DatabaseDriverInterface $db,
         private readonly AuthService $authService,
+        private readonly ?RouterInterface $router = null,
     ) {
         parent::__construct($view, $request, $security, $db);
     }
@@ -28,8 +30,10 @@ final class AuthController extends AbstractController
     #[Route('/login', method: 'GET', name: 'auth.login.show', public: true)]
     public function showLogin(): Response
     {
+        $redirectUrl = $this->resolveSuccessRedirectUrl();
+
         if ($this->authService->isAuthenticated()) {
-            return $this->redirect('/admin/users');
+            return $this->redirect($redirectUrl);
         }
 
         return $this->render('@Auth/login', [
@@ -44,16 +48,17 @@ final class AuthController extends AbstractController
 
         $username = $this->request->post('username');
         $password = $this->request->post('password');
+        $redirectUrl = $this->resolveSuccessRedirectUrl();
 
         if (is_string($username) && is_string($password) && $this->authService->loginWithCredentials($username, $password)) {
             if ($this->request->isXhr()) {
                 return new Response('Redirecting...', 200, [
-                    'HX-Redirect' => '/admin/users',
-                    'Location' => '/admin/users',
+                    'HX-Redirect' => $redirectUrl,
+                    'Location' => $redirectUrl,
                 ]);
             }
 
-            return $this->redirect('/admin/users');
+            return $this->redirect($redirectUrl);
         }
 
         return $this->render('@Auth/login', [
@@ -67,14 +72,41 @@ final class AuthController extends AbstractController
     {
         $this->validateCsrf();
         $this->authService->logout();
+        $loginUrl = $this->resolveLoginUrl();
 
         if ($this->request->isXhr()) {
             return new Response('Redirecting...', 200, [
-                'HX-Redirect' => '/login',
-                'Location' => '/login',
+                'HX-Redirect' => $loginUrl,
+                'Location' => $loginUrl,
             ]);
         }
 
-        return $this->redirect('/login');
+        return $this->redirect($loginUrl);
+    }
+
+    private function resolveSuccessRedirectUrl(): string
+    {
+        if ($this->router instanceof RouterInterface) {
+            try {
+                return $this->router->generateUrl('admin.index');
+            } catch (\Throwable) {
+                // Fallback to default path
+            }
+        }
+
+        return '/admin';
+    }
+
+    private function resolveLoginUrl(): string
+    {
+        if ($this->router instanceof RouterInterface) {
+            try {
+                return $this->router->generateUrl('auth.login.show');
+            } catch (\Throwable) {
+                // Fallback to default path
+            }
+        }
+
+        return '/login';
     }
 }
