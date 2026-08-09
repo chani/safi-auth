@@ -7,20 +7,14 @@ namespace Safi\Extensions\Auth\Models;
 final class GroupPermission extends AbstractAuthModel
 {
     public int $groupId {
-        get {
-            $val = $this->getProperty('group_id', 0);
-            return is_numeric($val) ? (int) $val : 0;
-        }
+        get => $this->getInt('group_id');
         set {
             $this->setProperty('group_id', $value);
         }
     }
 
     public string $permissionKey {
-        get {
-            $val = $this->getProperty('permission_key', '');
-            return is_string($val) ? $val : '';
-        }
+        get => $this->getString('permission_key');
         set {
             $this->setProperty('permission_key', trim($value));
         }

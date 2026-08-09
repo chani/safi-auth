@@ -7,30 +7,21 @@ namespace Safi\Extensions\Auth\Models;
 final class LoginAttempt extends AbstractAuthModel
 {
     public string $ip {
-        get {
-            $val = $this->getProperty('ip', '');
-            return is_string($val) ? $val : '';
-        }
+        get => $this->getString('ip');
         set {
             $this->setProperty('ip', trim($value));
         }
     }
 
     public string $username {
-        get {
-            $val = $this->getProperty('username', '');
-            return is_string($val) ? $val : '';
-        }
+        get => $this->getString('username');
         set {
             $this->setProperty('username', trim($value));
         }
     }
 
     public string $attemptedAt {
-        get {
-            $val = $this->getProperty('attempted_at', '');
-            return is_string($val) ? $val : '';
-        }
+        get => $this->getString('attempted_at');
         set {
             $this->setProperty('attempted_at', $value);
         }

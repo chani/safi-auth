@@ -7,20 +7,14 @@ namespace Safi\Extensions\Auth\Models;
 final class UserPermission extends AbstractAuthModel
 {
     public int $userId {
-        get {
-            $val = $this->getProperty('user_id', 0);
-            return is_numeric($val) ? (int) $val : 0;
-        }
+        get => $this->getInt('user_id');
         set {
             $this->setProperty('user_id', $value);
         }
     }
 
     public string $permissionKey {
-        get {
-            $val = $this->getProperty('permission_key', '');
-            return is_string($val) ? $val : '';
-        }
+        get => $this->getString('permission_key');
         set {
             $this->setProperty('permission_key', trim($value));
         }
