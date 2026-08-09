@@ -30,7 +30,7 @@ final class AuthController extends AbstractController
     #[Route('/login', method: 'GET', name: 'auth.login.show', public: true)]
     public function showLogin(): Response
     {
-        $redirectUrl = $this->resolveSuccessRedirectUrl();
+        $redirectUrl = $this->routeOrFallback('admin.index', '/admin');
 
         if ($this->authService->isAuthenticated()) {
             return $this->redirect($redirectUrl);
@@ -48,7 +48,7 @@ final class AuthController extends AbstractController
 
         $username = $this->request->post('username');
         $password = $this->request->post('password');
-        $redirectUrl = $this->resolveSuccessRedirectUrl();
+        $redirectUrl = $this->routeOrFallback('admin.index', '/admin');
 
         if (is_string($username) && is_string($password) && $this->authService->loginWithCredentials($username, $password)) {
             if ($this->request->isXhr()) {
@@ -72,7 +72,7 @@ final class AuthController extends AbstractController
     {
         $this->validateCsrf();
         $this->authService->logout();
-        $loginUrl = $this->resolveLoginUrl();
+        $loginUrl = $this->routeOrFallback('auth.login.show', '/login');
 
         if ($this->request->isXhr()) {
             return new Response('Redirecting...', 200, [
@@ -84,29 +84,16 @@ final class AuthController extends AbstractController
         return $this->redirect($loginUrl);
     }
 
-    private function resolveSuccessRedirectUrl(): string
+    private function routeOrFallback(string $routeName, string $fallback): string
     {
         if ($this->router instanceof RouterInterface) {
             try {
-                return $this->router->generateUrl('admin.index');
+                return $this->router->generateUrl($routeName);
             } catch (\Throwable) {
                 // Fallback to default path
             }
         }
 
-        return '/admin';
-    }
-
-    private function resolveLoginUrl(): string
-    {
-        if ($this->router instanceof RouterInterface) {
-            try {
-                return $this->router->generateUrl('auth.login.show');
-            } catch (\Throwable) {
-                // Fallback to default path
-            }
-        }
-
-        return '/login';
+        return $fallback;
     }
 }
