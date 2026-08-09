@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Safi\Core\Contracts\DatabaseDriverInterface;
 use Safi\Core\Contracts\SecurityServiceInterface;
+use Safi\Core\Event\EventDispatcher;
 use Safi\Core\Http\Context;
 use Safi\Core\Http\Request;
 use Safi\Core\Http\RequestHandlerInterface;
@@ -15,16 +16,20 @@ use Safi\Core\Http\Response;
 use Safi\Extensions\Auth\AuthMiddleware;
 use Safi\Extensions\Auth\AuthService;
 use Safi\Extensions\Auth\BruteForceShield;
-use Safi\Extensions\Session\SessionServiceInterface;
+use Safi\Extensions\Auth\Contracts\AuthenticationStorageInterface;
+use Safi\Extensions\Auth\Services\TotpService;
 
 final class AuthMiddlewareTest extends TestCase
 {
     public function testPassesPublicRoutesUnauthenticated(): void
     {
-        $session = $this->createStub(SessionServiceInterface::class);
+        $storage = $this->createStub(AuthenticationStorageInterface::class);
         $db = $this->createStub(DatabaseDriverInterface::class);
         $security = $this->createStub(SecurityServiceInterface::class);
-        $auth = new AuthService(new BruteForceShield(), $db, $session, $security);
+        $dispatcher = new EventDispatcher();
+        $totp = new TotpService();
+
+        $auth = new AuthService(new BruteForceShield(), $db, $storage, $security, $dispatcher, $totp);
         $middleware = new AuthMiddleware($auth);
 
         $request = new Request(server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/login']);
@@ -46,10 +51,13 @@ final class AuthMiddlewareTest extends TestCase
 
     public function testRedirectsUnauthenticatedUserOnProtectedPath(): void
     {
-        $session = $this->createStub(SessionServiceInterface::class);
+        $storage = $this->createStub(AuthenticationStorageInterface::class);
         $db = $this->createStub(DatabaseDriverInterface::class);
         $security = $this->createStub(SecurityServiceInterface::class);
-        $auth = new AuthService(new BruteForceShield(), $db, $session, $security);
+        $dispatcher = new EventDispatcher();
+        $totp = new TotpService();
+
+        $auth = new AuthService(new BruteForceShield(), $db, $storage, $security, $dispatcher, $totp);
         $middleware = new AuthMiddleware($auth);
 
         $request = new Request(server: ['REQUEST_METHOD' => 'GET', 'REQUEST_URI' => '/admin/dashboard']);
@@ -66,14 +74,19 @@ final class AuthMiddlewareTest extends TestCase
         $res = $middleware->process($context, $handler);
 
         $this->assertSame(302, $res->getStatusCode());
+        $this->assertArrayHasKey('Location', $res->getHeaders());
+        $this->assertSame('/login', $res->getHeaders()['Location']);
     }
 
     public function testReturns401OnXhrRequest(): void
     {
-        $session = $this->createStub(SessionServiceInterface::class);
+        $storage = $this->createStub(AuthenticationStorageInterface::class);
         $db = $this->createStub(DatabaseDriverInterface::class);
         $security = $this->createStub(SecurityServiceInterface::class);
-        $auth = new AuthService(new BruteForceShield(), $db, $session, $security);
+        $dispatcher = new EventDispatcher();
+        $totp = new TotpService();
+
+        $auth = new AuthService(new BruteForceShield(), $db, $storage, $security, $dispatcher, $totp);
         $middleware = new AuthMiddleware($auth);
 
         $request = new Request(server: [
