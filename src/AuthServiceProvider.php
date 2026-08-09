@@ -109,7 +109,6 @@ final class AuthServiceProvider implements ServiceProviderInterface
     #[\Override]
     public function boot(ContainerInterface $container): void
     {
-        // Register security audit log listeners
         if ($container->has(EventDispatcher::class) && $container->has(LoggerInterface::class)) {
             /** @var EventDispatcher $dispatcher */
             $dispatcher = $container->get(EventDispatcher::class);
@@ -118,11 +117,12 @@ final class AuthServiceProvider implements ServiceProviderInterface
 
             $auditListener = new SecurityAuditLogListener($logger);
 
-            $dispatcher->addListener(UserLoggedInEvent::class, [$auditListener, 'onUserLoggedIn']);
-            $dispatcher->addListener(UserLoggedOutEvent::class, [$auditListener, 'onUserLoggedOut']);
-            $dispatcher->addListener(FailedLoginAttemptEvent::class, [$auditListener, 'onFailedLogin']);
-            $dispatcher->addListener(TwoFactorChallengeRequestedEvent::class, [$auditListener, 'on2faChallenge']);
-            $dispatcher->addListener(PermissionDeniedEvent::class, [$auditListener, 'onPermissionDenied']);
+            // PHP 8.1 First-Class Callable Syntax
+            $dispatcher->addListener(UserLoggedInEvent::class, $auditListener->onUserLoggedIn(...));
+            $dispatcher->addListener(UserLoggedOutEvent::class, $auditListener->onUserLoggedOut(...));
+            $dispatcher->addListener(FailedLoginAttemptEvent::class, $auditListener->onFailedLogin(...));
+            $dispatcher->addListener(TwoFactorChallengeRequestedEvent::class, $auditListener->on2faChallenge(...));
+            $dispatcher->addListener(PermissionDeniedEvent::class, $auditListener->onPermissionDenied(...));
         }
     }
 }
